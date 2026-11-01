@@ -100,3 +100,24 @@ variable "selfie_match_threshold" {
     error_message = "selfie_match_threshold must be between 80 and 100."
   }
 }
+
+variable "search_instance_type" {
+  description = "OpenSearch data node type. Graviton m7g in prod (no burst credits to run out)."
+  type        = string
+}
+
+variable "search_instance_count" {
+  description = "OpenSearch data nodes; 2+ spreads them across AZs."
+  type        = number
+}
+
+variable "search_volume_gb" {
+  type    = number
+  default = 20
+}
+
+variable "create_opensearch_service_linked_role" {
+  description = "Set false if the account already has the OpenSearch service-linked role."
+  type        = bool
+  default     = true
+}

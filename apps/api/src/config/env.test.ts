@@ -61,4 +61,22 @@ describe('validateEnv', () => {
     });
     expect(env.AUTH_PROVIDER).toBe('cognito');
   });
+
+  it('needs an OpenSearch URL when search is on, and IAM auth in production', () => {
+    expect(validateEnv(base).SEARCH_PROVIDER).toBe('postgres');
+    expect(() => validateEnv({ ...base, SEARCH_PROVIDER: 'opensearch' })).toThrow(/OPENSEARCH_URL/);
+    expect(() =>
+      validateEnv({
+        ...base,
+        NODE_ENV: 'production',
+        AUTH_PROVIDER: 'cognito',
+        COGNITO_USER_POOL_ID: 'p',
+        COGNITO_CLIENT_ID: 'c',
+        COGNITO_CLIENT_SECRET: 's',
+        SEARCH_PROVIDER: 'opensearch',
+        OPENSEARCH_URL: 'https://search.internal',
+        OPENSEARCH_AUTH: 'none',
+      }),
+    ).toThrow(/OPENSEARCH_AUTH/);
+  });
 });

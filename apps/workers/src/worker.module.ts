@@ -10,15 +10,25 @@ import { JOB_HANDLERS, type JobHandler } from './jobs/job-handler.js';
 import { PhotoProcessHandler } from './jobs/photo-process.handler.js';
 import { PingHandler } from './jobs/ping.handler.js';
 import { SelfieVerifyHandler } from './jobs/selfie-verify.handler.js';
+import { PlanIndexHandler } from './jobs/plan-index.handler.js';
 import { UserPurgeHandler } from './jobs/user-purge.handler.js';
 import { createDb, createPool, DRIZZLE, PG_POOL } from './infra/database.js';
 import { OBJECT_STORE, S3ObjectStore } from './infra/object-store.js';
 import { MODERATION, NoopModeration, RekognitionModeration } from './media/moderation.js';
 import type pg from 'pg';
 import { SQS_CLIENT, SqsConsumer } from './queue/sqs-consumer.js';
+import { createSearchClient } from '@activity/search';
+import { PlanIndexSweeper } from './search/plan-index-sweeper.js';
+import { PlanIndexer, SEARCH_CLIENT, SEARCH_REPLICAS } from './search/plan-indexer.js';
 
 /** Register new job handlers here. */
-const HANDLERS = [PingHandler, PhotoProcessHandler, SelfieVerifyHandler, UserPurgeHandler];
+const HANDLERS = [
+  PingHandler,
+  PhotoProcessHandler,
+  SelfieVerifyHandler,
+  UserPurgeHandler,
+  PlanIndexHandler,
+];
 
 @Module({
   imports: [
@@ -82,6 +92,27 @@ const HANDLERS = [PingHandler, PhotoProcessHandler, SelfieVerifyHandler, UserPur
             )
           : new NoopModeration(),
     },
+    {
+      provide: SEARCH_CLIENT,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) =>
+        config.get('SEARCH_PROVIDER', { infer: true }) === 'opensearch'
+          ? createSearchClient({
+              node: config.get('OPENSEARCH_URL', { infer: true })!,
+              auth: config.get('OPENSEARCH_AUTH', { infer: true }),
+              region: config.get('AWS_REGION', { infer: true }),
+              requestTimeoutMs: 10_000,
+            })
+          : null,
+    },
+    {
+      provide: SEARCH_REPLICAS,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) =>
+        config.get('OPENSEARCH_REPLICAS', { infer: true }),
+    },
+    PlanIndexer,
+    PlanIndexSweeper,
     ...HANDLERS,
     {
       provide: JOB_HANDLERS,

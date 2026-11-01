@@ -39,6 +39,8 @@ run "prod_is_highly_available" {
     api_max_count          = 10
     worker_min_count       = 2
     worker_max_count       = 6
+    search_instance_type   = "m7g.medium.search"
+    search_instance_count  = 2
   }
 
   assert {
@@ -65,6 +67,14 @@ run "prod_is_highly_available" {
     condition     = toset(module.auth.client_auth_flows) == toset(["ALLOW_USER_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"])
     error_message = "The API client must only allow passwordless USER_AUTH and refresh."
   }
+  assert {
+    condition     = module.search.instance_count == 2 && module.search.zone_awareness_enabled
+    error_message = "Prod search must run two data nodes across AZs."
+  }
+  assert {
+    condition     = module.search.encrypted_at_rest && module.search.replicas == 1
+    error_message = "Prod search must be encrypted with one replica per shard."
+  }
 }
 
 run "staging_is_cost_optimised" {
@@ -82,6 +92,8 @@ run "staging_is_cost_optimised" {
     api_max_count          = 3
     worker_min_count       = 1
     worker_max_count       = 2
+    search_instance_type   = "t3.small.search"
+    search_instance_count  = 1
   }
 
   assert {
@@ -95,6 +107,10 @@ run "staging_is_cost_optimised" {
   assert {
     condition     = module.auth.deletion_protection == "INACTIVE"
     error_message = "Staging user pool can be torn down."
+  }
+  assert {
+    condition     = module.search.instance_count == 1 && !module.search.zone_awareness_enabled && module.search.replicas == 0
+    error_message = "Staging search is a single node with no replicas."
   }
 }
 
@@ -113,6 +129,8 @@ run "rejects_unknown_environment" {
     api_max_count          = 1
     worker_min_count       = 1
     worker_max_count       = 1
+    search_instance_type   = "t3.small.search"
+    search_instance_count  = 1
   }
   expect_failures = [var.environment]
 }

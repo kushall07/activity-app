@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
+  check,
   customType,
   date,
   index,
@@ -145,7 +147,31 @@ export const selfieVerifications = pgTable(
   (t) => [index('selfie_verifications_user_created_idx').on(t.userId, t.createdAt)],
 );
 
-/** Places where activities happen. Seeded from the event catalog in milestone 3. */
+export const activityCategory = pgEnum('activity_category', [
+  'sport',
+  'show',
+  'workshop',
+  'food',
+  'outdoors',
+  'art',
+  'science',
+  'games',
+]);
+
+/** What people do together. Reference data, seeded by migration; the slug is the stable id. */
+export const activities = pgTable('activities', {
+  slug: text('slug').primaryKey(),
+  name: text('name').notNull(),
+  category: activityCategory('category').notNull(),
+  emoji: text('emoji').notNull(),
+  /** Seats a new plan suggests (e.g. 3 for badminton doubles). */
+  defaultSeats: smallint('default_seats').notNull().default(1),
+  sortOrder: smallint('sort_order').notNull().default(0),
+  active: boolean('active').notNull().default(true),
+  ...timestamps,
+});
+
+/** Places where activities happen. Curated by admins (partner portal in milestone 5). */
 export const venues = pgTable(
   'venues',
   {
@@ -155,8 +181,91 @@ export const venues = pgTable(
     name: text('name').notNull(),
     city: text('city').notNull().default('Bengaluru'),
     area: text('area'),
+    address: text('address'),
     location: geographyPoint('location').notNull(),
+    /** Activity slugs this venue suits, used to filter venue search. */
+    activitySlugs: text('activity_slugs')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    active: boolean('active').notNull().default(true),
     ...timestamps,
   },
-  (t) => [index('venues_location_gix').using('gist', t.location)],
+  (t) => [
+    index('venues_location_gix').using('gist', t.location),
+    index('venues_activity_slugs_gin').using('gin', t.activitySlugs),
+  ],
+);
+
+export const skillLevel = pgEnum('skill_level', ['any', 'beginner', 'intermediate', 'advanced']);
+export const costSplit = pgEnum('cost_split', [
+  'free',
+  'host_pays',
+  'split_equally',
+  'each_pays_own',
+]);
+export const planStatus = pgEnum('plan_status', ['open', 'full', 'cancelled', 'completed']);
+
+/**
+ * A host offers seats for an activity at a time and place. The centre of the
+ * data model: requests, matches, chat and bookings (later milestones) hang off it.
+ */
+export const plans = pgTable(
+  'plans',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    hostId: uuid('host_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    activitySlug: text('activity_slug')
+      .notNull()
+      .references(() => activities.slug),
+    venueId: uuid('venue_id').references(() => venues.id, { onDelete: 'set null' }),
+    /** Copied from the venue, or the host's own name for the place. Never a home address. */
+    placeName: text('place_name').notNull(),
+    area: text('area').notNull(),
+    location: geographyPoint('location').notNull(),
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    durationMinutes: smallint('duration_minutes').notNull(),
+    /** Seats offered to others (the host is not counted). */
+    seatsTotal: smallint('seats_total').notNull(),
+    /** Accepted requests (milestone 4 updates this in the same transaction as the accept). */
+    seatsTaken: smallint('seats_taken').notNull().default(0),
+    wantedGenders: gender('wanted_genders').array().notNull(),
+    /** Optional seats per gender for group plans, e.g. {"woman": 2, "man": 2}. */
+    genderMix: jsonb('gender_mix').$type<Partial<Record<'woman' | 'man' | 'nonbinary', number>>>(),
+    ageMin: smallint('age_min').notNull().default(18),
+    ageMax: smallint('age_max').notNull().default(100),
+    skillLevel: skillLevel('skill_level').notNull().default('any'),
+    intent: intent('intent').notNull().default('either'),
+    costSplit: costSplit('cost_split').notNull().default('each_pays_own'),
+    costPerPersonInr: integer('cost_per_person_inr'),
+    verifiedOnly: boolean('verified_only').notNull().default(false),
+    note: text('note').notNull().default(''),
+    status: planStatus('status').notNull().default('open'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    /** Bumped on every change; the search index uses it as an external version. */
+    version: integer('version').notNull().default(1),
+    /** Highest version written to the search index. Lower than `version` = needs indexing. */
+    indexedVersion: integer('indexed_version').notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    index('plans_location_gix').using('gist', t.location),
+    // Feed: open plans by start time (the PostGIS fallback path and "soonest" sort).
+    index('plans_open_starts_at_idx')
+      .on(t.startsAt)
+      .where(sql`${t.status} = 'open'`),
+    index('plans_host_starts_at_idx').on(t.hostId, t.startsAt),
+    index('plans_activity_starts_at_idx').on(t.activitySlug, t.startsAt),
+    // Search sync sweeper: rows whose latest version is not yet in the index.
+    index('plans_unindexed_idx')
+      .on(t.updatedAt)
+      .where(sql`${t.version} > ${t.indexedVersion}`),
+    check('plans_seats_check', sql`${t.seatsTaken} >= 0 and ${t.seatsTaken} <= ${t.seatsTotal}`),
+    check('plans_age_check', sql`${t.ageMin} >= 18 and ${t.ageMin} <= ${t.ageMax}`),
+    check('plans_wanted_genders_check', sql`cardinality(${t.wantedGenders}) > 0`),
+  ],
 );

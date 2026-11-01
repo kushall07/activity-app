@@ -14,6 +14,7 @@ import { createDb, createPool, type Database } from '../src/infra/database.js';
 import { PhotoProcessHandler } from '../src/jobs/photo-process.handler.js';
 import { SelfieVerifyHandler } from '../src/jobs/selfie-verify.handler.js';
 import { UserPurgeHandler } from '../src/jobs/user-purge.handler.js';
+import { PlanIndexer } from '../src/search/plan-indexer.js';
 import { FakeModeration, MemoryStore } from './fakes.js';
 
 const pool = createPool({
@@ -178,7 +179,9 @@ describe('worker job handlers (e2e)', () => {
       await store.put(`public/photos/${userId}/p/full.jpg`, Buffer.from('x'), 'image/jpeg');
       await store.put(`verification/${userId}/v`, Buffer.from('x'), 'image/jpeg');
       await store.put(`public/photos/someone-else/p/full.jpg`, Buffer.from('x'), 'image/jpeg');
-      await new UserPurgeHandler(store).handle(job('user.purge', { userId }));
+      await new UserPurgeHandler(store, new PlanIndexer(db, null, 0)).handle(
+        job('user.purge', { userId }),
+      );
       expect([...store.objects.keys()]).toEqual(['public/photos/someone-else/p/full.jpg']);
     });
   });

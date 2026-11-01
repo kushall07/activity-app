@@ -23,6 +23,8 @@ export default defineConfig({
             PHOTOS_BUCKET: 'activity-photos-e2e',
             PHOTOS_PUBLIC_BASE_URL: 'https://cdn.e2e.test',
             SQS_JOBS_QUEUE_URL: 'http://localhost:9324/000000000000/activity-jobs',
+            // Tests pick the search path explicitly (see plans.e2e.test.ts).
+            SEARCH_PROVIDER: 'postgres',
           },
           testTimeout: 30_000,
           hookTimeout: 30_000,

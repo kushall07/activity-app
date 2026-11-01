@@ -26,5 +26,5 @@ export function useMe(options: { pollWhileProcessing?: boolean } = {}) {
 export function nextRoute(me: { onboarding: { hasProfile: boolean; complete: boolean } }) {
   if (!me.onboarding.hasProfile) return '/onboarding/basics' as const;
   if (!me.onboarding.complete) return '/onboarding/photos' as const;
-  return '/profile' as const;
+  return '/explore' as const;
 }

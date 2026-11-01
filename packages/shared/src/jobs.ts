@@ -25,15 +25,24 @@ export const JOB_TYPES = {
   selfieVerify: 'selfie.verify',
   /** Delete every stored object for a deleted account. */
   userPurge: 'user.purge',
+  /** Bring a plan's search document in line with Postgres (index or delete). */
+  planIndex: 'plan.index',
 } as const;
 
 export const photoProcessPayloadSchema = z.object({ photoId: z.string().uuid() });
 export const selfieVerifyPayloadSchema = z.object({ verificationId: z.string().uuid() });
 export const userPurgePayloadSchema = z.object({ userId: z.string().uuid() });
 
+/** `version` is informational; the handler always reads the current row. */
+export const planIndexPayloadSchema = z.object({
+  planId: z.string().uuid(),
+  version: z.number().int().optional(),
+});
+
 export type PhotoProcessPayload = z.infer<typeof photoProcessPayloadSchema>;
 export type SelfieVerifyPayload = z.infer<typeof selfieVerifyPayloadSchema>;
 export type UserPurgePayload = z.infer<typeof userPurgePayloadSchema>;
+export type PlanIndexPayload = z.infer<typeof planIndexPayloadSchema>;
 
 /**
  * S3 key layout, shared so the API (presigns) and workers (process) agree.

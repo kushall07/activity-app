@@ -16,3 +16,7 @@ api_min_count    = 2
 api_max_count    = 10
 worker_min_count = 2
 worker_max_count = 6
+
+search_instance_type  = "m7g.medium.search"
+search_instance_count = 2
+search_volume_gb      = 20

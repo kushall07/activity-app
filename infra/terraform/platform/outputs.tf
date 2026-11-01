@@ -59,3 +59,7 @@ output "cognito_user_pool_id" {
 output "cognito_client_id" {
   value = module.auth.client_id
 }
+
+output "search_endpoint" {
+  value = module.search.endpoint_url
+}

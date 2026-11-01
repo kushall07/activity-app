@@ -14,3 +14,7 @@ api_min_count    = 1
 api_max_count    = 3
 worker_min_count = 1
 worker_max_count = 2
+
+search_instance_type  = "t3.small.search"
+search_instance_count = 1
+search_volume_gb      = 10

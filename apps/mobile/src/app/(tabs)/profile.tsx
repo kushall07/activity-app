@@ -1,10 +1,10 @@
 import { useMutation } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { Alert, Dimensions, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useApp } from '../auth/AppContext';
-import { Button, ErrorText, Loading, Screen } from '../components/ui';
-import { useMe } from '../lib/useMe';
-import { colors } from '../theme';
+import { useApp } from '../../auth/AppContext';
+import { Button, ErrorText, Loading, Screen } from '../../components/ui';
+import { useMe } from '../../lib/useMe';
+import { colors } from '../../theme';
 
 const INTENT_LABEL = {
   date: 'Open to a date',

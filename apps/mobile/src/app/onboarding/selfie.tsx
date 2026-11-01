@@ -40,7 +40,7 @@ export default function SelfieScreen() {
     }
   };
 
-  const done = () => router.replace('/profile');
+  const done = () => router.replace('/explore');
 
   if (status === 'verified') {
     return (

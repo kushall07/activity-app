@@ -3,6 +3,7 @@
 #   redis     -> ElastiCache Redis 7
 #   sqs       -> Amazon SQS (ElasticMQ speaks the SQS API)
 #   s3        -> Amazon S3 + CloudFront for photos (S3Mock; objects readable without auth)
+#   opensearch -> Amazon OpenSearch Service (security plugin off locally; IAM auth in AWS)
 name: activity-app
 
 services:
@@ -46,6 +47,23 @@ services:
       COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: activity-photos
     ports:
       - '9090:9090'
+
+  opensearch:
+    image: opensearchproject/opensearch:2.19.2
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: 'true'
+      DISABLE_INSTALL_DEMO_CONFIG: 'true'
+      # Dev laptops are often nearly full; don't let disk watermarks block index creation.
+      cluster.routing.allocation.disk.threshold_enabled: 'false'
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - '9200:9200'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fs http://localhost:9200/_cluster/health || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
 volumes:
   pgdata:

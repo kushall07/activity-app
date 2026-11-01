@@ -1,18 +1,25 @@
 import {
+  activitiesResponseSchema,
   apiErrorSchema,
   authTokensSchema,
   createPhotoUploadResponseSchema,
   createSelfieUploadResponseSchema,
+  feedResponseSchema,
   healthResponseSchema,
   meResponseSchema,
+  myPlansResponseSchema,
   photoSchema,
   photosResponseSchema,
+  planSchema,
   profileSchema,
   startOtpResponseSchema,
   verificationResponseSchema,
+  venuesResponseSchema,
   verifyOtpResponseSchema,
+  type CreatePlanRequest,
   type CreateUploadRequest,
   type HealthResponse,
+  type UpdatePlanRequest,
   type UpsertProfileRequest,
 } from '@activity/shared';
 import { z } from 'zod';
@@ -32,7 +39,7 @@ export class ApiError extends Error {
 }
 
 type FetchLike = typeof fetch;
-type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 interface RequestOptions<T> {
   body?: unknown;
@@ -43,6 +50,32 @@ interface RequestOptions<T> {
 }
 
 const empty = z.unknown();
+
+/** Query string from defined values; arrays become comma-separated lists. */
+export function toQuery(params: Record<string, string | number | string[] | undefined>): string {
+  const parts = Object.entries(params)
+    .filter(([, v]) => v !== undefined && !(Array.isArray(v) && v.length === 0))
+    .map(
+      ([k, v]) =>
+        `${encodeURIComponent(k)}=${encodeURIComponent(Array.isArray(v) ? v.join(',') : String(v))}`,
+    );
+  return parts.length ? `?${parts.join('&')}` : '';
+}
+
+export interface FeedParams {
+  lat: number;
+  lng: number;
+  radiusKm?: number;
+  categories?: string[];
+  activities?: string[];
+  from?: string;
+  to?: string;
+  intent?: 'date' | 'friends' | 'either';
+  maxCostInr?: number;
+  sort?: 'soonest' | 'nearest';
+  limit?: number;
+  cursor?: string;
+}
 
 /**
  * Typed API client. Every response is validated against the shared contract so
@@ -183,6 +216,26 @@ export function createApiClient(
         ...authed,
         schema: verificationResponseSchema,
       }),
+
+    activities: () =>
+      request('GET', '/v1/activities', { ...authed, schema: activitiesResponseSchema }),
+    venues: (params: { q?: string; activity?: string; lat?: number; lng?: number }) =>
+      request('GET', `/v1/venues${toQuery(params)}`, { ...authed, schema: venuesResponseSchema }),
+    feed: (params: FeedParams) =>
+      request('GET', `/v1/plans${toQuery({ ...params })}`, {
+        ...authed,
+        schema: feedResponseSchema,
+      }),
+    plan: (id: string, origin?: { lat: number; lng: number }) =>
+      request('GET', `/v1/plans/${id}${toQuery({ ...origin })}`, { ...authed, schema: planSchema }),
+    createPlan: (plan: CreatePlanRequest) =>
+      request('POST', '/v1/plans', { ...authed, body: plan, schema: planSchema }),
+    updatePlan: (id: string, patch: UpdatePlanRequest) =>
+      request('PATCH', `/v1/plans/${id}`, { ...authed, body: patch, schema: planSchema }),
+    cancelPlan: (id: string) =>
+      request('POST', `/v1/plans/${id}/cancel`, { ...authed, schema: planSchema }),
+    myPlans: (scope: 'upcoming' | 'past') =>
+      request('GET', `/v1/me/plans?scope=${scope}`, { ...authed, schema: myPlansResponseSchema }),
   };
 }
 
