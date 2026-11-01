@@ -2,9 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
+import { AuthModule } from './auth/auth.module.js';
+import { CommonModule } from './common/common.module.js';
 import { Env, validateEnv } from './config/env.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
+import { ProfilesModule } from './profiles/profiles.module.js';
 import { RedisModule } from './redis/redis.module.js';
 
 @Module({
@@ -33,6 +36,7 @@ import { RedisModule } from './redis/redis.module.js';
               return id;
             },
             redact: ['req.headers.authorization', 'req.headers.cookie'],
+            // Never log request bodies: they carry OTPs and refresh tokens.
             autoLogging: { ignore: (req) => req.url?.startsWith('/health') ?? false },
           },
         };
@@ -40,7 +44,10 @@ import { RedisModule } from './redis/redis.module.js';
     }),
     DatabaseModule,
     RedisModule,
+    CommonModule,
     HealthModule,
+    AuthModule,
+    ProfilesModule,
   ],
 })
 export class AppModule {}

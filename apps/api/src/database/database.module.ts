@@ -4,7 +4,7 @@ import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import type { Env } from '../config/env.js';
 import { DRIZZLE, PG_POOL } from './database.constants.js';
-import * as schema from './schema.js';
+import * as schema from '@activity/db';
 
 export type Database = NodePgDatabase<typeof schema>;
 

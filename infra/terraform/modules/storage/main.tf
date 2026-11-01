@@ -62,6 +62,18 @@ resource "aws_s3_bucket_lifecycle_configuration" "photos" {
     }
   }
 
+  # Verification selfies are deleted right after the check; this catches abandoned ones.
+  rule {
+    id     = "expire-verification-selfies"
+    status = "Enabled"
+    filter {
+      prefix = "verification/"
+    }
+    expiration {
+      days = 1
+    }
+  }
+
   # Deleted photos (user deleted account / removed photo) are purged after 30 days.
   rule {
     id     = "purge-noncurrent"
@@ -76,7 +88,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "photos" {
 resource "aws_s3_bucket_cors_configuration" "photos" {
   bucket = aws_s3_bucket.photos.id
   cors_rule {
-    allowed_methods = ["PUT"]
+    allowed_methods = ["POST", "PUT"]
     allowed_origins = var.upload_allowed_origins
     allowed_headers = ["content-type", "content-length", "x-amz-*"]
     max_age_seconds = 3000

@@ -1,32 +1,25 @@
-import { useQuery } from '@tanstack/react-query';
-import { StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ApiStatusCard } from '../components/ApiStatusCard';
-import { api } from '../lib/api';
+import { Redirect } from 'expo-router';
+import { Text } from 'react-native';
+import { useApp } from '../auth/AppContext';
+import { Button, Loading, Screen, Title } from '../components/ui';
+import { nextRoute, useMe } from '../lib/useMe';
 
-export default function HomeScreen() {
-  const health = useQuery({ queryKey: ['health'], queryFn: api.health });
+/** Entry gate: sends members to login, the next onboarding step, or their profile. */
+export default function Index() {
+  const { status } = useApp();
+  const me = useMe();
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <Text style={styles.heading}>Find company for anything you love</Text>
-        <Text style={styles.sub}>Foundation build · Bengaluru</Text>
-        <ApiStatusCard
-          apiUrl={api.baseUrl}
-          data={health.data}
-          error={health.error}
-          loading={health.isFetching}
-          onRetry={() => void health.refetch()}
-        />
-      </View>
-    </SafeAreaView>
-  );
+  if (status === 'loading') return <Loading />;
+  if (status === 'signedOut') return <Redirect href="/login" />;
+  if (me.data) return <Redirect href={nextRoute(me.data)} />;
+  if (me.error) {
+    return (
+      <Screen>
+        <Title sub={me.error.message}>Can't load your profile</Title>
+        <Button label="Try again" onPress={() => void me.refetch()} loading={me.isFetching} />
+        <Text />
+      </Screen>
+    );
+  }
+  return <Loading />;
 }
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#f4f1ec' },
-  container: { flex: 1, padding: 24, justifyContent: 'center', gap: 16 },
-  heading: { fontSize: 28, fontWeight: '700', color: '#111' },
-  sub: { fontSize: 15, color: '#555' },
-});

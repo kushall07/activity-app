@@ -15,7 +15,15 @@ export default defineConfig({
         test: {
           name: 'e2e',
           include: ['test/**/*.e2e.test.ts'],
-          env: { LOG_LEVEL: 'silent' },
+          env: {
+            LOG_LEVEL: 'silent',
+            AUTH_PROVIDER: 'dev',
+            DEV_AUTH_SECRET: 'e2e-secret-e2e-secret-e2e-secret-e2e',
+            OTP_MAX_PER_IP_PER_HOUR: '10000',
+            PHOTOS_BUCKET: 'activity-photos-e2e',
+            PHOTOS_PUBLIC_BASE_URL: 'https://cdn.e2e.test',
+            SQS_JOBS_QUEUE_URL: 'http://localhost:9324/000000000000/activity-jobs',
+          },
           testTimeout: 30_000,
           hookTimeout: 30_000,
         },

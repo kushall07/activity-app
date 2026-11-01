@@ -2,6 +2,7 @@ import { INestApplication, RequestMethod } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
+import { ApiExceptionFilter } from './common/http-exception.filter.js';
 import type { Env } from './config/env.js';
 
 /** Shared app setup so production and e2e tests run the exact same middleware stack. */
@@ -27,6 +28,7 @@ export function configureApp(app: NestExpressApplication): INestApplication {
       { path: 'health/{*path}', method: RequestMethod.ALL },
     ],
   });
+  app.useGlobalFilters(new ApiExceptionFilter(app.getHttpAdapter()));
   app.enableShutdownHooks();
   return app;
 }

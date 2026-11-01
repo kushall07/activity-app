@@ -84,3 +84,19 @@ variable "alarm_email" {
   type        = string
   default     = null
 }
+
+variable "app_display_name" {
+  description = "Product name used in OTP texts. Must match the DLT-registered SMS template."
+  type        = string
+  default     = "Activity"
+}
+
+variable "selfie_match_threshold" {
+  description = "Rekognition face similarity (0-100) a selfie needs to earn the verified badge."
+  type        = number
+  default     = 95
+  validation {
+    condition     = var.selfie_match_threshold >= 80 && var.selfie_match_threshold <= 100
+    error_message = "selfie_match_threshold must be between 80 and 100."
+  }
+}

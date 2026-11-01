@@ -53,6 +53,18 @@ run "prod_is_highly_available" {
     condition     = module.database.multi_az && module.database.deletion_protection
     error_message = "Prod database must be Multi-AZ with deletion protection."
   }
+  assert {
+    condition     = module.auth.deletion_protection == "ACTIVE"
+    error_message = "Prod user pool must have deletion protection."
+  }
+  assert {
+    condition     = module.auth.user_pool_tier == "ESSENTIALS"
+    error_message = "SMS_OTP sign-in needs the Essentials tier."
+  }
+  assert {
+    condition     = toset(module.auth.client_auth_flows) == toset(["ALLOW_USER_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"])
+    error_message = "The API client must only allow passwordless USER_AUTH and refresh."
+  }
 }
 
 run "staging_is_cost_optimised" {
@@ -79,6 +91,10 @@ run "staging_is_cost_optimised" {
   assert {
     condition     = !module.database.multi_az
     error_message = "Staging database is single-AZ to save cost."
+  }
+  assert {
+    condition     = module.auth.deletion_protection == "INACTIVE"
+    error_message = "Staging user pool can be torn down."
   }
 }
 

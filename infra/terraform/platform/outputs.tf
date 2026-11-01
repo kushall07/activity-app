@@ -51,3 +51,11 @@ output "private_subnet_ids" {
 output "app_security_group_id" {
   value = module.cluster.app_security_group_id
 }
+
+output "cognito_user_pool_id" {
+  value = module.auth.user_pool_id
+}
+
+output "cognito_client_id" {
+  value = module.auth.client_id
+}

@@ -32,7 +32,7 @@ jobs:
       - run: pnpm test
 
   api-e2e:
-    name: API e2e (Postgres + PostGIS, Redis)
+    name: API + workers e2e (Postgres + PostGIS, Redis)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -64,7 +64,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @activity/api... build
+      - run: pnpm --filter @activity/api... --filter @activity/workers... build
       - name: Apply migrations
         run: pnpm db:migrate
       - name: Fail if schema.ts has changes without a migration

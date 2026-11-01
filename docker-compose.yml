@@ -2,6 +2,7 @@
 #   postgres  -> RDS PostgreSQL 16 + PostGIS
 #   redis     -> ElastiCache Redis 7
 #   sqs       -> Amazon SQS (ElasticMQ speaks the SQS API)
+#   s3        -> Amazon S3 + CloudFront for photos (S3Mock; objects readable without auth)
 name: activity-app
 
 services:
@@ -38,6 +39,13 @@ services:
       - '9325:9325'
     volumes:
       - ./infra/local/elasticmq.conf:/opt/elasticmq.conf:ro
+
+  s3:
+    image: adobe/s3mock:5.2
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: activity-photos
+    ports:
+      - '9090:9090'
 
 volumes:
   pgdata:
