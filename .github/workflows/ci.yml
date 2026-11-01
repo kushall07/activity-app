@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint, typecheck, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test
+
+  api-e2e:
+    name: API e2e (Postgres + PostGIS, Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: activity
+          POSTGRES_PASSWORD: activity
+          POSTGRES_DB: activity
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U activity -d activity"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://activity:activity@localhost:5432/activity
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @activity/api... build
+      - name: Apply migrations
+        run: pnpm db:migrate
+      - name: Fail if schema.ts has changes without a migration
+        working-directory: apps/api
+        run: |
+          pnpm exec drizzle-kit generate
+          git diff --exit-code --stat -- src/database/migrations \
+            || (echo "::error::Run 'pnpm db:generate' and commit the migration" && exit 1)
+          test -z "$(git status --porcelain -- src/database/migrations)" \
+            || (echo "::error::Untracked migration generated; run 'pnpm db:generate' and commit it" && exit 1)
+      - run: pnpm test:e2e
+
+  mobile:
+    name: Mobile bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Bundle the Android JS (catches Metro resolution errors)
+        working-directory: apps/mobile
+        run: pnpm export:check
+        env:
+          EXPO_OFFLINE: '1'
+
+  docker:
+    name: Container images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        app: [api, workers]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.app }} (linux/arm64 for Graviton Fargate)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          platforms: linux/arm64
+          push: false
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.4
+      - run: terraform fmt -check -recursive
+      - name: Validate bootstrap
+        working-directory: infra/terraform/bootstrap
+        run: terraform init -backend=false -input=false && terraform validate
+      - name: Validate platform
+        working-directory: infra/terraform/platform
+        run: terraform init -backend=false -input=false && terraform validate
+      - name: Plan tests (mocked AWS provider, no credentials)
+        working-directory: infra/terraform/platform
+        run: terraform test

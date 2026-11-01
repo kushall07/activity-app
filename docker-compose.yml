@@ -1,0 +1,43 @@
+# Local development dependencies. Mirrors the AWS services:
+#   postgres  -> RDS PostgreSQL 16 + PostGIS
+#   redis     -> ElastiCache Redis 7
+#   sqs       -> Amazon SQS (ElasticMQ speaks the SQS API)
+name: activity-app
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: activity
+      POSTGRES_PASSWORD: activity
+      POSTGRES_DB: activity
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U activity -d activity']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  sqs:
+    image: softwaremill/elasticmq-native:1.6.14
+    ports:
+      - '9324:9324'
+      - '9325:9325'
+    volumes:
+      - ./infra/local/elasticmq.conf:/opt/elasticmq.conf:ro
+
+volumes:
+  pgdata:
