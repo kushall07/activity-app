@@ -14,6 +14,15 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+type SignOutHook = (api: ApiClient) => Promise<void>;
+const signOutHooks = new Set<SignOutHook>();
+
+/** Runs before sign-out while the session is still valid (e.g. unregister push). */
+export function onBeforeSignOut(hook: SignOutHook): () => void {
+  signOutHooks.add(hook);
+  return () => signOutHooks.delete(hook);
+}
+
 export function AppProvider({
   children,
   session: injected,
@@ -41,6 +50,7 @@ export function AppProvider({
       session,
       status,
       signOut: async () => {
+        await Promise.all([...signOutHooks].map((h) => h(api).catch(() => undefined)));
         const token = session.getRefreshToken();
         if (token) await api.logout(token).catch(() => undefined);
         await session.signOut();

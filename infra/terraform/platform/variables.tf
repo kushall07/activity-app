@@ -121,3 +121,40 @@ variable "create_opensearch_service_linked_role" {
   type        = bool
   default     = true
 }
+
+# --- Push notifications (SNS mobile push) -----------------------------------
+# Leave null until the Firebase project / Apple key exist; that OS's pushes are
+# then skipped. Values are SSM parameter names, never the secrets themselves.
+
+variable "fcm_service_account_parameter" {
+  description = "SSM SecureString name with the Firebase service account JSON, e.g. /activity/prod/push/fcm."
+  type        = string
+  default     = null
+}
+
+variable "apns_signing_key_parameter" {
+  description = "SSM SecureString name with the APNs .p8 key, e.g. /activity/prod/push/apns-key."
+  type        = string
+  default     = null
+}
+
+variable "apns_key_id" {
+  type    = string
+  default = null
+}
+
+variable "apns_team_id" {
+  type    = string
+  default = null
+}
+
+variable "apns_bundle_id" {
+  type    = string
+  default = null
+}
+
+variable "apns_sandbox" {
+  description = "Use the APNs sandbox (development builds). Staging may set true; prod must be false."
+  type        = bool
+  default     = false
+}

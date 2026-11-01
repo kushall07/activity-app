@@ -316,6 +316,12 @@ export default function PostScreen() {
             value={draft.verifiedOnly}
             onChange={(v) => set('verifiedOnly', v)}
           />
+          <Toggle
+            label="Auto-accept verified members"
+            hint="Verified people who fit everything above join straight away. Great for group games."
+            value={draft.autoAccept}
+            onChange={(v) => set('autoAccept', v)}
+          />
         </>
       )}
 

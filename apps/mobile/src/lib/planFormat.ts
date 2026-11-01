@@ -1,4 +1,4 @@
-import type { CostSplit, Plan, SkillLevel } from '@activity/shared';
+import type { CostSplit, Plan, RequestStatus, SkillLevel } from '@activity/shared';
 
 /** Plans are in Bengaluru, so times are always shown in IST, whatever the phone's zone. */
 const IST_OFFSET_MS = 330 * 60_000;
@@ -136,3 +136,13 @@ export function whenRange(when: When, now = new Date()): { from?: string; to?: s
     to: new Date(sat + 2 * DAY_MS - 1).toISOString(),
   };
 }
+
+/** How a member's own request reads. A decline is phrased gently on purpose. */
+export const REQUEST_LABEL: Record<RequestStatus, string> = {
+  pending: 'Requested',
+  accepted: "You're in",
+  declined: 'Not this time',
+  withdrawn: 'Withdrawn',
+  expired: 'Expired',
+  cancelled: 'Plan cancelled',
+};

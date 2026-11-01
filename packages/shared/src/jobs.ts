@@ -27,6 +27,8 @@ export const JOB_TYPES = {
   userPurge: 'user.purge',
   /** Bring a plan's search document in line with Postgres (index or delete). */
   planIndex: 'plan.index',
+  /** Send a push notification to every device of the given members. */
+  pushSend: 'push.send',
 } as const;
 
 export const photoProcessPayloadSchema = z.object({ photoId: z.string().uuid() });
@@ -39,10 +41,21 @@ export const planIndexPayloadSchema = z.object({
   version: z.number().int().optional(),
 });
 
+export const pushSendPayloadSchema = z.object({
+  userIds: z.array(z.string().uuid()).min(1).max(20),
+  title: z.string().max(100),
+  body: z.string().max(240),
+  /** Routing data for the tap (see pushDataSchema in devices.ts). */
+  data: z.record(z.string(), z.string()),
+  /** Notifications with the same key replace each other on the device (e.g. one per chat). */
+  collapseKey: z.string().max(64).optional(),
+});
+
 export type PhotoProcessPayload = z.infer<typeof photoProcessPayloadSchema>;
 export type SelfieVerifyPayload = z.infer<typeof selfieVerifyPayloadSchema>;
 export type UserPurgePayload = z.infer<typeof userPurgePayloadSchema>;
 export type PlanIndexPayload = z.infer<typeof planIndexPayloadSchema>;
+export type PushSendPayload = z.infer<typeof pushSendPayloadSchema>;
 
 /**
  * S3 key layout, shared so the API (presigns) and workers (process) agree.

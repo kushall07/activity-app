@@ -56,6 +56,10 @@ run "prod_is_highly_available" {
     error_message = "Prod database must be Multi-AZ with deletion protection."
   }
   assert {
+    condition     = module.push.android_app_arn == null && module.push.ios_app_arn == null
+    error_message = "Push platform applications are only created once their credentials are configured."
+  }
+  assert {
     condition     = module.auth.deletion_protection == "ACTIVE"
     error_message = "Prod user pool must have deletion protection."
   }

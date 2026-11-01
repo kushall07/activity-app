@@ -4,3 +4,6 @@ export * from './jobs.js';
 export * from './phone.js';
 export * from './profile.js';
 export * from './plans.js';
+export * from './requests.js';
+export * from './chat.js';
+export * from './devices.js';

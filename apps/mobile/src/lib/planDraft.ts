@@ -28,6 +28,7 @@ export interface Draft {
   skill: SkillLevel;
   intent: Intent;
   verifiedOnly: boolean;
+  autoAccept: boolean;
   costSplit: CostSplit;
   cost: string;
   note: string;
@@ -50,6 +51,7 @@ export function emptyDraft(now = new Date()): Draft {
     skill: 'any',
     intent: 'either',
     verifiedOnly: false,
+    autoAccept: false,
     costSplit: 'each_pays_own',
     cost: '',
     note: '',
@@ -75,6 +77,7 @@ export function draftFromPlan(p: Plan): Draft {
     skill: p.skillLevel,
     intent: p.intent,
     verifiedOnly: p.verifiedOnly,
+    autoAccept: p.autoAccept,
     costSplit: p.costSplit,
     cost: p.costPerPersonInr ? String(p.costPerPersonInr) : '',
     note: p.note,
@@ -100,6 +103,7 @@ export function toRequest(d: Draft): CreatePlanRequest {
     costSplit: d.costSplit,
     costPerPersonInr: d.costSplit === 'free' || d.costSplit === 'host_pays' ? null : cost,
     verifiedOnly: d.verifiedOnly,
+    autoAccept: d.autoAccept,
     note: d.note.trim(),
   };
 }
