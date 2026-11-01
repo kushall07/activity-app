@@ -61,6 +61,13 @@ module "jobs_queue" {
   alarm_topic_arns = [aws_sns_topic.alarms.arn]
 }
 
+module "auth" {
+  source              = "../modules/auth"
+  name                = local.name
+  app_name            = var.app_display_name
+  deletion_protection = var.environment == "prod"
+}
+
 module "storage" {
   source        = "../modules/storage"
   bucket_name   = "${local.name}-photos-${data.aws_caller_identity.current.account_id}"
@@ -84,7 +91,19 @@ locals {
 
     SQS_JOBS_QUEUE_URL = module.jobs_queue.queue_url
     PHOTOS_BUCKET      = module.storage.bucket_name
-    PHOTOS_CDN_DOMAIN  = module.storage.cdn_domain_name
+  }
+
+  api_env = {
+    PORT                   = "3000"
+    AUTH_PROVIDER          = "cognito"
+    COGNITO_USER_POOL_ID   = module.auth.user_pool_id
+    COGNITO_CLIENT_ID      = module.auth.client_id
+    PHOTOS_PUBLIC_BASE_URL = "https://${module.storage.cdn_domain_name}"
+  }
+
+  worker_env = {
+    MODERATION_PROVIDER    = "rekognition"
+    SELFIE_MATCH_THRESHOLD = tostring(var.selfie_match_threshold)
   }
 
   # RDS-managed secret is JSON {username, password}; ECS extracts the keys.
@@ -101,9 +120,24 @@ data "aws_iam_policy_document" "api_task" {
     resources = [module.jobs_queue.queue_arn]
   }
   statement {
-    sid       = "PhotoUploads"
-    actions   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
-    resources = ["${module.storage.bucket_arn}/*"]
+    # Presigned POSTs are signed with the task role, so it needs PutObject itself.
+    sid     = "PhotoUploads"
+    actions = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+    resources = [
+      "${module.storage.bucket_arn}/incoming/*",
+      "${module.storage.bucket_arn}/verification/*",
+      "${module.storage.bucket_arn}/public/*",
+    ]
+  }
+  statement {
+    sid       = "CheckUploads"
+    actions   = ["s3:ListBucket"] # lets HeadObject return 404 instead of 403 for missing uploads
+    resources = [module.storage.bucket_arn]
+  }
+  statement {
+    sid       = "ManageMembers"
+    actions   = ["cognito-idp:AdminDeleteUser"]
+    resources = [module.auth.user_pool_arn]
   }
 }
 
@@ -120,9 +154,9 @@ module "api" {
   listener_arn           = module.cluster.listener_arn
   min_count              = var.api_min_count
   max_count              = var.api_max_count
-  environment            = merge(local.common_env, { PORT = "3000" })
-  secrets                = local.db_secrets
-  secret_arns            = [local.db_secret]
+  environment            = merge(local.common_env, local.api_env)
+  secrets                = merge(local.db_secrets, { COGNITO_CLIENT_SECRET = module.auth.client_secret_arn })
+  secret_arns            = [local.db_secret, module.auth.client_secret_arn]
   task_policy_json       = data.aws_iam_policy_document.api_task.json
   enable_execute_command = var.environment != "prod"
 }
@@ -144,6 +178,17 @@ data "aws_iam_policy_document" "worker_task" {
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
     resources = ["${module.storage.bucket_arn}/*"]
   }
+  statement {
+    sid       = "PurgeDeletedMembers"
+    actions   = ["s3:ListBucket"]
+    resources = [module.storage.bucket_arn]
+  }
+  statement {
+    # Rekognition image APIs do not support resource-level permissions.
+    sid       = "ModerateAndVerify"
+    actions   = ["rekognition:DetectModerationLabels", "rekognition:DetectFaces", "rekognition:CompareFaces"]
+    resources = ["*"]
+  }
 }
 
 module "workers" {
@@ -159,7 +204,7 @@ module "workers" {
   memory                 = 512
   min_count              = var.worker_min_count
   max_count              = var.worker_max_count
-  environment            = local.common_env
+  environment            = merge(local.common_env, local.worker_env)
   secrets                = local.db_secrets
   secret_arns            = [local.db_secret]
   task_policy_json       = data.aws_iam_policy_document.worker_task.json

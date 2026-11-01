@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import pg from 'pg';
-import { resolveDatabaseUrl } from '../config/database-url.js';
+import { resolveDatabaseUrl } from '@activity/db';
 
 const url = resolveDatabaseUrl(process.env);
 if (!url) {

@@ -1,4 +1,4 @@
-# Architecture (milestone 1 foundation)
+# Architecture
 
 The full product plan lives in the project plan doc. This page records what is
 built in the repository and why.
@@ -39,9 +39,71 @@ decision, which is a read replica or a larger DB instance. Staging is single-AZ 
 - **Deploys**: ECS rolling deploys with circuit-breaker rollback. Terraform ignores the running
   image tag; CI owns deployments (added with the first deploy workflow).
 
+## Accounts and login (milestone 2)
+
+```
+app ── POST /v1/auth/otp/start {phone} ──> API ── rate limits (Redis) ──> Cognito ──SMS──> phone
+app ── POST /v1/auth/otp/verify {challengeId, code} ──> API ──> Cognito ──> tokens ──> app
+app ── Authorization: Bearer <access token> ──> API (verifies JWT against Cognito JWKS)
+```
+
+- **Cognito, passwordless.** Choice-based auth (`USER_AUTH` + `SMS_OTP`, Essentials tier). New
+  numbers go through `SignUp` -> `ConfirmSignUp`, and the confirmation session signs them in
+  without a second SMS. Members never have a password.
+- **The API proxies Cognito.** It is a confidential app client (client secret in Secrets
+  Manager), so the app cannot call Cognito directly and every SMS passes our controls:
+  Indian numbers only (`ALLOWED_PHONE_PREFIXES`), a 30 s resend cooldown, 5 codes per number
+  per hour, 30 per IP per hour, 5 wrong codes per challenge. This is the main defence against
+  SMS-pumping fraud, which would otherwise be a direct cost.
+- **Challenges** live in Redis for 3 minutes keyed by a random `challengeId`; the Cognito
+  session never reaches the device.
+- **Tokens.** Access tokens (60 min) are verified locally with the cached JWKS, then mapped to
+  `users` by `cognito_sub` on each request (one indexed lookup). The refresh token (90 days)
+  is stored in the iOS Keychain / Android Keystore via expo-secure-store and wraps the
+  Cognito token with the user's `sub`, which the refresh call's `SECRET_HASH` needs. The app
+  refreshes transparently on a 401.
+- **Every route requires auth** (global guard) unless marked `@Public()`.
+- **Account deletion** (`DELETE /v1/me`, required by both app stores) deletes the Cognito user
+  and the database rows, then a worker job purges all S3 objects for the account.
+- **Local/dev** uses `AUTH_PROVIDER=dev` (fixed code, HS256 JWTs). Env validation refuses it
+  in production.
+
+## Profiles, photos and verification (milestone 2)
+
+```
+app ─POST /v1/me/photos─> API: reserve slot, presigned POST (10 MB, image/* only, 5 min)
+app ─multipart POST────> S3 incoming/<user>/<photo>
+app ─POST .../complete─> API: HeadObject, status=processing, SQS photo.process
+worker: decode with sharp (rejects non-images, decompression bombs), auto-rotate,
+        strip EXIF/GPS by re-encoding to JPEG, 1600px full + 400px thumb,
+        Rekognition DetectModerationLabels -> public/photos/<user>/<photo>/{full,thumb}.jpg
+        (CloudFront, immutable cache) or status=rejected with a reason
+```
+
+- A profile needs a name, birthday (18+ enforced; only age is ever shown), gender and at least
+  **3 approved photos** (max 6) before anyone else can see it. `GET /v1/me` returns the
+  onboarding state the app uses to route the member.
+- **Presigned POST, not PUT,** so S3 enforces the size limit and content type itself.
+- Uploads are re-encoded on the device first (HEIC -> JPEG, max 1600 px), so uploads are
+  small and the server only accepts JPEG/PNG/WebP.
+- Moderation blocks explicit content, violence, gore and hate symbols; swimwear is allowed.
+  Labels are stored with the photo for appeals and threshold tuning.
+- **Selfie verification**: the member takes a front-camera selfie; the worker checks for exactly
+  one face, then `CompareFaces` against their approved photos. Similarity >= 95 sets
+  `profiles.verified_at` (the verified badge). The selfie is deleted right after the check
+  (biometric data, DPDP Act) and a lifecycle rule removes any abandoned ones after a day.
+  Limited to 5 attempts per day.
+- Photo URLs are public-but-unguessable CloudFront URLs (UUID paths), the norm for dating apps.
+  Signed URLs are an option later if needed.
+- Local/dev uses S3Mock and `MODERATION_PROVIDER=none` (approves everything; refused in
+  production).
+
 ## Deliberately deferred
 
-- Auth (Cognito phone OTP), profiles and photo upload API: milestone 2.
+- Liveness detection for selfies (Rekognition Face Liveness needs a native SDK component;
+  today's check is a still-photo face match). A manual review queue for failed checks.
+- Cognito threat protection (Plus tier) and WAF on the API.
+- Changing phone number.
 - Custom domain + ACM certificate: needs a chosen app name/domain.
 - WAF, RDS Proxy, OpenSearch, WebSocket chat: added in the milestones that need them.
 - A dedicated least-privilege DB user for the app (currently the RDS master user).

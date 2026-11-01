@@ -4,7 +4,7 @@ variable "bucket_name" {
 }
 
 variable "upload_allowed_origins" {
-  description = "Origins allowed to PUT via presigned URLs. Native apps send no Origin; keep for a future web client."
+  description = "Origins allowed to upload via presigned POST. Native apps send no Origin; keep for a future web client."
   type        = list(string)
   default     = ["*"]
 }

@@ -19,4 +19,35 @@ export type JobEnvelope<TPayload = unknown> = Omit<z.infer<typeof jobEnvelopeSch
 
 export const JOB_TYPES = {
   systemPing: 'system.ping',
+  /** Validate, strip EXIF, resize and moderate an uploaded profile photo. */
+  photoProcess: 'photo.process',
+  /** Compare a verification selfie with the user's approved photos. */
+  selfieVerify: 'selfie.verify',
+  /** Delete every stored object for a deleted account. */
+  userPurge: 'user.purge',
 } as const;
+
+export const photoProcessPayloadSchema = z.object({ photoId: z.string().uuid() });
+export const selfieVerifyPayloadSchema = z.object({ verificationId: z.string().uuid() });
+export const userPurgePayloadSchema = z.object({ userId: z.string().uuid() });
+
+export type PhotoProcessPayload = z.infer<typeof photoProcessPayloadSchema>;
+export type SelfieVerifyPayload = z.infer<typeof selfieVerifyPayloadSchema>;
+export type UserPurgePayload = z.infer<typeof userPurgePayloadSchema>;
+
+/**
+ * S3 key layout, shared so the API (presigns) and workers (process) agree.
+ * Only `public/` is readable through CloudFront; everything else stays private.
+ */
+export const storageKeys = {
+  photoUpload: (userId: string, photoId: string) => `incoming/${userId}/${photoId}`,
+  photoPublicPrefix: (userId: string, photoId: string) => `public/photos/${userId}/${photoId}`,
+  photoVariant: (prefix: string, variant: 'full' | 'thumb') => `${prefix}/${variant}.jpg`,
+  selfieUpload: (userId: string, verificationId: string) =>
+    `verification/${userId}/${verificationId}`,
+  userPrefixes: (userId: string) => [
+    `incoming/${userId}/`,
+    `public/photos/${userId}/`,
+    `verification/${userId}/`,
+  ],
+};

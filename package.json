@@ -17,7 +17,7 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r run test",
-    "test:e2e": "pnpm --filter @activity/api test:e2e",
+    "test:e2e": "pnpm --filter @activity/api --filter @activity/workers run test:e2e",
     "infra:up": "docker compose up -d --wait",
     "infra:down": "docker compose down"
   },

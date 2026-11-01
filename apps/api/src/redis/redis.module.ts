@@ -10,7 +10,7 @@ import { REDIS } from './redis.constants.js';
     {
       provide: REDIS,
       inject: [ConfigService],
-      useFactory: (config: ConfigService<Env, true>) => {
+      useFactory: async (config: ConfigService<Env, true>) => {
         const client = new Redis(config.get('REDIS_URL', { infer: true }), {
           maxRetriesPerRequest: 2,
           enableOfflineQueue: false,
@@ -18,6 +18,15 @@ import { REDIS } from './redis.constants.js';
         });
         const logger = new Logger('Redis');
         client.on('error', (err: Error) => logger.warn(`Redis error: ${err.message}`));
+        // With the offline queue off, commands sent before the first connect fail. Give the
+        // connection a moment at boot, but still start (degraded) if Redis is down.
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 5_000);
+          client.once('ready', () => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
         return client;
       },
     },

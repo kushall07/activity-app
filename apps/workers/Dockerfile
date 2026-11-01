@@ -8,10 +8,12 @@ WORKDIR /repo
 FROM base AS build
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/db/package.json packages/db/
 COPY apps/workers/package.json apps/workers/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts --filter @activity/workers...
 COPY packages/shared packages/shared
+COPY packages/db packages/db
 COPY apps/workers apps/workers
 RUN pnpm --filter @activity/workers... run build \
  && pnpm --filter @activity/workers deploy --prod --legacy /out

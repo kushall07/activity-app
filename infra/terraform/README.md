@@ -5,7 +5,7 @@ Written and tested offline; **not applied yet**.
 ```
 bootstrap/   one-time per AWS account: remote-state bucket + GitHub OIDC deploy role
 platform/    the whole environment (network, RDS, cache, SQS, S3/CloudFront, ECS, ALB, alarms)
-modules/     network, database, cache, queues, storage, ecs_cluster, ecs_service
+modules/     network, database, cache, queues, storage, auth (Cognito), ecs_cluster, ecs_service
 envs/        per-environment variables (staging.tfvars, prod.tfvars) and backend config
 ```
 
@@ -21,13 +21,22 @@ cd platform && terraform init -backend=false && terraform validate && terraform 
 ```
 
 `terraform test` plans both environments with a mocked AWS provider and asserts the HA
-settings (3 AZs, NAT per AZ, Multi-AZ DB with deletion protection in prod).
+settings (3 AZs, NAT per AZ, Multi-AZ DB with deletion protection in prod) and the
+Cognito setup (Essentials tier, passwordless-only client, deletion protection in prod).
 
 ## What is needed to deploy
 
 1. An AWS account (ideally separate accounts for staging and prod under AWS Organizations)
    and an admin who can run the bootstrap once.
 2. A domain for the API (for the ACM certificate). Until then the ALB serves HTTP only.
+3. **SMS for OTP login (India).** TRAI rules require DLT registration before any A2P SMS
+   is delivered: register the business entity, a sender ID and the OTP text (it must match
+   `sms_authentication_message` in `modules/auth`, e.g. "{####} is your Activity code. Do not
+   share it with anyone.") with a DLT operator, then add the sender ID and template in AWS End
+   User Messaging SMS and request to leave the SMS sandbox. Until then, OTPs only reach phone
+   numbers verified in the SMS sandbox. Expect this to take 1 to 3 weeks; start early.
+4. Cognito Essentials tier (needed for passwordless SMS OTP) bills per monthly active user
+   beyond the free tier, plus the SMS cost per OTP (roughly Rs 0.15 to 0.25 each in India).
 
 ## First apply
 
