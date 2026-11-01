@@ -19,6 +19,8 @@ jest.mock('expo-router', () => ({
 
 const USER = '6f1c1b0e-8f5e-4b8a-9a7e-1b2c3d4e5f60';
 const PLAN_ID = '0b5c6a7d-1e2f-4a3b-8c9d-0e1f2a3b4c5d';
+// Explore chains three async steps (profile, location, feed); CI runners need more than the 1 s default.
+const SLOW = { timeout: 5000 };
 const json = (status: number, body: unknown) =>
   ({ ok: status < 400, status, json: async () => body }) as Response;
 
@@ -120,7 +122,7 @@ describe('ExploreScreen', () => {
     });
     await wrap(<ExploreScreen />);
 
-    expect(await screen.findByText('Badminton')).toBeTruthy();
+    expect(await screen.findByText('Badminton', {}, SLOW)).toBeTruthy();
     expect(screen.getByText(/Around Indiranagar/)).toBeTruthy();
     expect(screen.getByText(/Community court · Indiranagar · 400 m/)).toBeTruthy();
 
@@ -146,7 +148,7 @@ describe('ExploreScreen', () => {
       'GET /v1/plans': () => json(200, { plans: [], nextCursor: null }),
     });
     await wrap(<ExploreScreen />);
-    expect(await screen.findByText('No plans here yet')).toBeTruthy();
+    expect(await screen.findByText('No plans here yet', {}, SLOW)).toBeTruthy();
     await fireEvent.press(screen.getByText('🎤 Shows'));
     await waitFor(() => expect(calls.some((c) => c.url.includes('categories=show'))).toBe(true));
   });
@@ -160,7 +162,7 @@ describe('PostScreen', () => {
     });
     await wrap(<PostScreen />);
 
-    await fireEvent.press(await screen.findByLabelText('Badminton'));
+    await fireEvent.press(await screen.findByLabelText('Badminton', {}, SLOW));
     await fireEvent.press(screen.getByText('Next'));
 
     // Step 2: tomorrow, a named place.
@@ -203,7 +205,7 @@ describe('PostScreen', () => {
   it('stops on a step until it is complete', async () => {
     mockApi({ 'GET /v1/activities': () => json(200, { activities: [badminton] }) });
     await wrap(<PostScreen />);
-    await screen.findByLabelText('Badminton');
+    await screen.findByLabelText('Badminton', {}, SLOW);
     await fireEvent.press(screen.getByText('Next'));
     expect(screen.getByText('Pick an activity')).toBeTruthy();
   });
