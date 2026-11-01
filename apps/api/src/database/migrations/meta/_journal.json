@@ -15,6 +15,13 @@
       "when": 1793536572381,
       "tag": "0001_profiles_photos_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793544257858,
+      "tag": "0002_plans_feed",
+      "breakpoints": true
     }
   ]
 }

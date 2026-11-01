@@ -53,9 +53,39 @@ export const envSchema = z.object({
   S3_ENDPOINT: z.string().url().optional(),
   SQS_ENDPOINT: z.string().url().optional(),
   SQS_JOBS_QUEUE_URL: z.string().url(),
+
+  // --- Search ---------------------------------------------------------------
+  /**
+   * `opensearch` serves the Explore feed from OpenSearch and falls back to
+   * PostGIS if it errors or is slow. `postgres` uses PostGIS only (local dev, tests).
+   */
+  SEARCH_PROVIDER: z.enum(['opensearch', 'postgres']).default('postgres'),
+  OPENSEARCH_URL: z.string().url().optional(),
+  /** `aws` signs requests with the task role. `none` is for local OpenSearch only. */
+  OPENSEARCH_AUTH: z.enum(['aws', 'none']).default('aws'),
+  /** The feed gives up on OpenSearch after this and answers from Postgres. */
+  OPENSEARCH_TIMEOUT_MS: z.coerce.number().int().min(100).max(10_000).default(1_500),
 });
 
 const refinedEnvSchema = envSchema.superRefine((env, ctx) => {
+  if (env.SEARCH_PROVIDER === 'opensearch' && !env.OPENSEARCH_URL) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['OPENSEARCH_URL'],
+      message: 'OPENSEARCH_URL is required when SEARCH_PROVIDER=opensearch',
+    });
+  }
+  if (
+    env.NODE_ENV === 'production' &&
+    env.SEARCH_PROVIDER === 'opensearch' &&
+    env.OPENSEARCH_AUTH !== 'aws'
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['OPENSEARCH_AUTH'],
+      message: 'OPENSEARCH_AUTH must be aws in production',
+    });
+  }
   if (env.AUTH_PROVIDER === 'cognito') {
     for (const key of [
       'COGNITO_USER_POOL_ID',

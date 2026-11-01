@@ -1,0 +1,34 @@
+{
+  "name": "@activity/search",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenSearch client, the plans index definition and document mapping, shared by the API (queries) and workers (indexing).",
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aws-sdk/credential-provider-node": "^3.972.92",
+    "@opensearch-project/opensearch": "^3.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.0.5"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}

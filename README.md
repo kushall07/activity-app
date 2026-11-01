@@ -26,9 +26,10 @@ This repository is a TypeScript monorepo:
 ```bash
 pnpm install
 cp .env.example .env
-pnpm infra:up            # Postgres+PostGIS, Redis, ElasticMQ (SQS), S3Mock (S3) via docker compose
+pnpm infra:up            # Postgres+PostGIS, Redis, ElasticMQ (SQS), S3Mock (S3), OpenSearch via docker compose
 pnpm build
 pnpm db:migrate          # applies SQL migrations in apps/api/src/database/migrations
+pnpm db:seed             # optional: sample venues, hosts and upcoming plans for the Explore feed
 
 pnpm dev:api             # http://localhost:3000/health and /health/ready
 pnpm dev:workers         # consumes the local jobs queue
@@ -38,7 +39,8 @@ pnpm dev:mobile          # scan the QR code with Expo Go
 Locally nothing talks to AWS: login uses a dev OTP provider (no SMS, the code is
 always `000000`), photos go to S3Mock, and the workers approve every photo and
 selfie (`MODERATION_PROVIDER=none`). In AWS the same code uses Cognito and
-Rekognition; both stand-ins are refused when `NODE_ENV=production`.
+Rekognition; both stand-ins are refused when `NODE_ENV=production`. OpenSearch needs
+about 1 GB of RAM; set `SEARCH_PROVIDER=postgres` to run the feed on PostGIS alone.
 
 On a physical phone set `EXPO_PUBLIC_API_URL` in `apps/mobile/.env` to your
 laptop's LAN IP (see `apps/mobile/.env.example`). Photo URLs point at
@@ -51,6 +53,7 @@ Redis are reachable.
 ```bash
 pnpm lint && pnpm typecheck && pnpm test   # what CI runs on every PR
 pnpm test:e2e                              # API + workers against real Postgres/Redis (needs infra:up)
+OPENSEARCH_URL=http://localhost:9200 pnpm test:e2e   # also runs the feed and indexing on OpenSearch
 pnpm db:generate                           # after editing packages/db/src/schema.ts
 pnpm format                                # prettier
 ```
@@ -66,7 +69,7 @@ with the running version (expand, then contract).
 ## CI
 
 `.github/workflows/ci.yml` runs on every pull request: format, lint, typecheck,
-unit tests, API e2e tests against PostGIS + Redis service containers, a
+unit tests, API e2e tests against PostGIS, Redis and OpenSearch service containers, a
 migration drift check, an Android JS bundle, arm64 Docker builds for the API and
 workers, and Terraform fmt/validate plus offline plan tests.
 

@@ -7,6 +7,7 @@ import { CommonModule } from './common/common.module.js';
 import { Env, validateEnv } from './config/env.js';
 import { DatabaseModule } from './database/database.module.js';
 import { HealthModule } from './health/health.module.js';
+import { PlansModule } from './plans/plans.module.js';
 import { ProfilesModule } from './profiles/profiles.module.js';
 import { RedisModule } from './redis/redis.module.js';
 
@@ -48,6 +49,7 @@ import { RedisModule } from './redis/redis.module.js';
     HealthModule,
     AuthModule,
     ProfilesModule,
+    PlansModule,
   ],
 })
 export class AppModule {}

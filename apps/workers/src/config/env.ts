@@ -32,6 +32,16 @@ export const envSchema = z.object({
   MODERATION_MIN_CONFIDENCE: z.coerce.number().min(50).max(100).default(80),
   /** Face similarity (0-100) a selfie needs against a profile photo to verify. */
   SELFIE_MATCH_THRESHOLD: z.coerce.number().min(80).max(100).default(95),
+
+  /** `opensearch` keeps the plans index in sync with Postgres. `postgres` turns indexing off. */
+  SEARCH_PROVIDER: z.enum(['opensearch', 'postgres']).default('postgres'),
+  OPENSEARCH_URL: z.string().url().optional(),
+  /** `aws` signs requests with the task role. `none` is for local OpenSearch only. */
+  OPENSEARCH_AUTH: z.enum(['aws', 'none']).default('aws'),
+  /** Replicas for a newly created index: 1 in production (2 data nodes), 0 locally. */
+  OPENSEARCH_REPLICAS: z.coerce.number().int().min(0).max(2).default(1),
+  /** How often the sweeper indexes plans whose latest version is not in the index yet. */
+  SEARCH_SWEEP_INTERVAL_SECONDS: z.coerce.number().int().min(5).max(3600).default(30),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -39,6 +49,13 @@ export type Env = z.infer<typeof envSchema>;
 export function validateEnv(raw: Record<string, unknown>): Env {
   const result = envSchema
     .superRefine((env, ctx) => {
+      if (env.SEARCH_PROVIDER === 'opensearch' && !env.OPENSEARCH_URL) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['OPENSEARCH_URL'],
+          message: 'OPENSEARCH_URL is required when SEARCH_PROVIDER=opensearch',
+        });
+      }
       if (env.NODE_ENV === 'production' && env.MODERATION_PROVIDER === 'none') {
         ctx.addIssue({
           code: 'custom',

@@ -74,6 +74,20 @@ module "storage" {
   force_destroy = var.environment != "prod"
 }
 
+module "search" {
+  source                     = "../modules/search"
+  name                       = local.name
+  vpc_id                     = module.network.vpc_id
+  subnet_ids                 = module.network.private_subnet_ids
+  allowed_security_group_ids = [module.cluster.app_security_group_id]
+  allowed_role_arns          = [module.api.task_role_arn, module.workers.task_role_arn]
+  instance_type              = var.search_instance_type
+  instance_count             = var.search_instance_count
+  volume_size_gb             = var.search_volume_gb
+  create_service_linked_role = var.create_opensearch_service_linked_role
+  alarm_topic_arns           = [aws_sns_topic.alarms.arn]
+}
+
 # --- Application services -------------------------------------------------
 
 locals {
@@ -91,6 +105,10 @@ locals {
 
     SQS_JOBS_QUEUE_URL = module.jobs_queue.queue_url
     PHOTOS_BUCKET      = module.storage.bucket_name
+
+    SEARCH_PROVIDER = "opensearch"
+    OPENSEARCH_URL  = module.search.endpoint_url
+    OPENSEARCH_AUTH = "aws"
   }
 
   api_env = {
@@ -104,7 +122,11 @@ locals {
   worker_env = {
     MODERATION_PROVIDER    = "rekognition"
     SELFIE_MATCH_THRESHOLD = tostring(var.selfie_match_threshold)
+    OPENSEARCH_REPLICAS    = tostring(module.search.replicas)
   }
+
+  search_domain_arn = "arn:aws:es:${var.region}:${data.aws_caller_identity.current.account_id}:domain/${local.name}/*"
+  search_actions    = ["es:ESHttpGet", "es:ESHttpHead", "es:ESHttpPost", "es:ESHttpPut", "es:ESHttpDelete"]
 
   # RDS-managed secret is JSON {username, password}; ECS extracts the keys.
   db_secrets = {
@@ -138,6 +160,11 @@ data "aws_iam_policy_document" "api_task" {
     sid       = "ManageMembers"
     actions   = ["cognito-idp:AdminDeleteUser"]
     resources = [module.auth.user_pool_arn]
+  }
+  statement {
+    sid       = "QueryPlans"
+    actions   = local.search_actions
+    resources = [local.search_domain_arn]
   }
 }
 
@@ -188,6 +215,11 @@ data "aws_iam_policy_document" "worker_task" {
     sid       = "ModerateAndVerify"
     actions   = ["rekognition:DetectModerationLabels", "rekognition:DetectFaces", "rekognition:CompareFaces"]
     resources = ["*"]
+  }
+  statement {
+    sid       = "IndexPlans"
+    actions   = local.search_actions
+    resources = [local.search_domain_arn]
   }
 }
 

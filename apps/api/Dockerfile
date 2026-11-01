@@ -9,11 +9,13 @@ FROM base AS build
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
+COPY packages/search/package.json packages/search/
 COPY apps/api/package.json apps/api/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts --filter @activity/api...
 COPY packages/shared packages/shared
 COPY packages/db packages/db
+COPY packages/search packages/search
 COPY apps/api apps/api
 RUN pnpm --filter @activity/api... run build \
  && pnpm --filter @activity/api deploy --prod --legacy /out

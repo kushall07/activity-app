@@ -98,6 +98,55 @@ worker: decode with sharp (rejects non-images, decompression bombs), auto-rotate
 - Local/dev uses S3Mock and `MODERATION_PROVIDER=none` (approves everything; refused in
   production).
 
+## Plans and the Explore feed (milestone 3)
+
+```
+app ─POST /v1/plans──> API: validate, insert plan (version=1) ─SQS plan.index─> worker
+worker: read plan from Postgres -> index or delete in OpenSearch (external version) -> indexed_version
+app ─GET /v1/plans?lat&lng&filters─> API: OpenSearch (ids) ─or─ PostGIS (ids) ─> Postgres (page, filters re-checked)
+```
+
+- **A plan** is a host offering 1 to 10 seats for an activity at a time and place: who can
+  join (genders, optional seats per gender, age range, level, date/friends/either,
+  verified-only), cost split and a short note. Posting needs a complete profile and the
+  verified badge; a host can have 5 upcoming plans and post 10 a day. Notes and place
+  names are rejected if they contain phone numbers, emails or handles, so contact
+  happens in the app after a match.
+- **Places are public.** A plan is at a listed venue (admins curate venues; partner
+  portal in milestone 5) or at a named place in one of 20 Bengaluru neighbourhoods,
+  optionally with a pin. We never ask for an address. Plans outside Bengaluru are refused.
+- **Activities** are reference data (37 at launch across sport, shows, workshops, food,
+  outdoors, art, science and games), seeded by migration; the slug is the stable id.
+- **Postgres is the source of truth; OpenSearch is an index.** Every change bumps
+  `plans.version` and enqueues `plan.index`. The worker reads the current row and writes it
+  with external versioning (`external_gte`), so retries and out-of-order jobs converge on the
+  latest state. If an enqueue is lost or OpenSearch is down, a sweeper in the workers
+  (one at a time via a Postgres advisory lock) indexes every plan with
+  `version > indexed_version` every 30 s, and hourly drops documents for ended plans.
+- **The feed reads ids from search and details from Postgres.** OpenSearch (or the PostGIS
+  query when it errors or takes over 1.5 s) returns ordered plan ids; the page is then read
+  from Postgres with the same filters re-applied. A stale index entry can only drop an
+  item, never show a cancelled plan or one the viewer should not see, and profile edits
+  never need a reindex. The index holds only filter and sort fields, no personal data.
+- **Hard filters** (identical in both paths, tested against both): plan open and not
+  started, seats left, within the radius, viewer's gender wanted, viewer's age in range,
+  not the viewer's own plan, verified-only plans hidden from unverified members. Optional
+  filters: activities, categories, time window, intent (date or friends also match
+  either), budget (plans with no stated cost are kept).
+- **Keyset pagination.** The cursor holds the last item's sort key (start time or
+  distance, plus id), so pages do not shift while plans are posted, and either path can
+  continue the other's cursor.
+- **Sizing.** At ~10k transactions/day there are a few thousand upcoming plans: one shard,
+  one replica. Prod runs two Graviton data nodes across two AZs (`m7g.medium.search`),
+  staging one `t3.small.search`. The domain is VPC-only, encrypted, TLS 1.2+, and only the
+  API and worker task roles can call it (SigV4). PostGIS alone would serve this load; the
+  index is there for ranking and text search in milestone 4 and to keep feed reads off the
+  primary database as traffic grows.
+- **Mobile.** Tabs for Explore, Post, My plans and Profile. Explore uses coarse location
+  when allowed and inside Bengaluru, otherwise the member's neighbourhood. Times are always
+  shown in IST. Posting is four steps (what, when and where, who, cost) and the same
+  screen edits a plan.
+
 ## Deliberately deferred
 
 - Liveness detection for selfies (Rekognition Face Liveness needs a native SDK component;
@@ -105,5 +154,9 @@ worker: decode with sharp (rejects non-images, decompression bombs), auto-rotate
 - Cognito threat protection (Plus tier) and WAF on the API.
 - Changing phone number.
 - Custom domain + ACM certificate: needs a chosen app name/domain.
-- WAF, RDS Proxy, OpenSearch, WebSocket chat: added in the milestones that need them.
+- WAF, RDS Proxy, WebSocket chat: added in the milestones that need them.
+- Place search with a maps provider (Google Places or Amazon Location) and a map pin
+  picker; today a custom place is a name plus a neighbourhood.
+- Push notifications for new plans in followed activities (milestone 4 with SNS).
+- Closing ended plans in the database (they read as completed); done with check-in in milestone 6.
 - A dedicated least-privilege DB user for the app (currently the RDS master user).

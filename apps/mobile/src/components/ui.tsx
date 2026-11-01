@@ -6,6 +6,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -148,6 +149,116 @@ export function Chips<T extends string>({
   );
 }
 
+/** Chips where several can be on, e.g. "who can join". */
+export function MultiChips<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: readonly { value: T; label: string }[];
+  value: readonly T[];
+  onChange: (v: T[]) => void;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.chips}>
+        {options.map((o) => {
+          const selected = value.includes(o.value);
+          return (
+            <Pressable
+              key={o.value}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: selected }}
+              onPress={() =>
+                onChange(selected ? value.filter((v) => v !== o.value) : [...value, o.value])
+              }
+              style={[styles.chip, selected && styles.chipSelected]}
+            >
+              <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{o.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+/** A number with − and + buttons, e.g. seats or an age bound. */
+export function Stepper({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  format = String,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step?: number;
+  format?: (v: number) => string;
+}) {
+  return (
+    <View style={styles.stepperRow}>
+      <Text style={[styles.label, styles.flex]}>{label}</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Decrease ${label}`}
+        disabled={value - step < min}
+        onPress={() => onChange(Math.max(min, value - step))}
+        style={[styles.stepperButton, value - step < min && styles.buttonDisabled]}
+      >
+        <Text style={styles.stepperSymbol}>−</Text>
+      </Pressable>
+      <Text style={styles.stepperValue} accessibilityLabel={`${label}: ${format(value)}`}>
+        {format(value)}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Increase ${label}`}
+        disabled={value + step > max}
+        onPress={() => onChange(Math.min(max, value + step))}
+        style={[styles.stepperButton, value + step > max && styles.buttonDisabled]}
+      >
+        <Text style={styles.stepperSymbol}>+</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+export function Toggle({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <View style={styles.stepperRow}>
+      <View style={styles.flex}>
+        <Text style={styles.label}>{label}</Text>
+        {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+      </View>
+      <Switch
+        accessibilityLabel={label}
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ true: colors.accent, false: colors.border }}
+      />
+    </View>
+  );
+}
+
 export function ErrorText({ children }: { children: ReactNode }) {
   if (!children) return null;
   return (
@@ -216,4 +327,23 @@ const styles = StyleSheet.create({
   chipSelected: { backgroundColor: colors.text, borderColor: colors.text },
   chipText: { color: colors.text, fontSize: 15 },
   chipTextSelected: { color: colors.surface, fontWeight: '600' },
+  stepperRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stepperButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperSymbol: { fontSize: 22, color: colors.text, lineHeight: 24 },
+  stepperValue: {
+    minWidth: 64,
+    textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.text,
+  },
 });

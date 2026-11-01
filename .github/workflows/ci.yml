@@ -32,7 +32,7 @@ jobs:
       - run: pnpm test
 
   api-e2e:
-    name: API + workers e2e (Postgres + PostGIS, Redis)
+    name: API + workers e2e (Postgres + PostGIS, Redis, OpenSearch)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -52,10 +52,23 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 10
+      opensearch:
+        image: opensearchproject/opensearch:2.19.2
+        env:
+          discovery.type: single-node
+          DISABLE_SECURITY_PLUGIN: 'true'
+          DISABLE_INSTALL_DEMO_CONFIG: 'true'
+          OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+        ports: ['9200:9200']
+        options: >-
+          --health-cmd "curl -fs http://localhost:9200/_cluster/health || exit 1"
+          --health-interval 5s --health-timeout 5s --health-retries 30
     env:
       NODE_ENV: test
       DATABASE_URL: postgres://activity:activity@localhost:5432/activity
       REDIS_URL: redis://localhost:6379
+      # Runs the feed and indexing tests against OpenSearch as well as PostGIS.
+      OPENSEARCH_URL: http://localhost:9200
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4

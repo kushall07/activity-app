@@ -11,6 +11,7 @@
     "dev:workers": "pnpm --filter @activity/workers dev",
     "dev:mobile": "pnpm --filter mobile start",
     "db:migrate": "pnpm --filter @activity/api db:migrate",
+    "db:seed": "pnpm --filter @activity/api db:seed",
     "db:generate": "pnpm --filter @activity/api db:generate",
     "lint": "eslint .",
     "format": "prettier --write .",
