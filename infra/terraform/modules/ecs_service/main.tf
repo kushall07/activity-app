@@ -80,8 +80,8 @@ locals {
     readonlyRootFilesystem = true
     # Tiny init as PID 1: reaps zombies and forwards SIGTERM to Node.
     linuxParameters = { initProcessEnabled = true }
-    stopTimeout            = 30
-    portMappings           = var.port != null ? [{ containerPort = var.port, protocol = "tcp" }] : []
+    stopTimeout     = 30
+    portMappings    = var.port != null ? [{ containerPort = var.port, protocol = "tcp" }] : []
     healthCheck = var.port != null ? {
       command     = ["CMD-SHELL", "wget -qO- http://127.0.0.1:${var.port}${var.health_check_path} || exit 1"]
       interval    = 15
