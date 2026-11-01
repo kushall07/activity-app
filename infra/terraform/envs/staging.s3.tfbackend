@@ -1,0 +1,6 @@
+# Bucket created by ../bootstrap. Replace ACCOUNT_ID after bootstrapping.
+bucket       = "activity-tfstate-ACCOUNT_ID"
+key          = "platform/staging.tfstate"
+region       = "ap-south-1"
+encrypt      = true
+use_lockfile = true

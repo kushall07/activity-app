@@ -1,0 +1,33 @@
+{
+  "name": "activity-app",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter=!mobile run build",
+    "dev:api": "pnpm --filter @activity/api dev",
+    "dev:workers": "pnpm --filter @activity/workers dev",
+    "dev:mobile": "pnpm --filter mobile start",
+    "db:migrate": "pnpm --filter @activity/api db:migrate",
+    "db:generate": "pnpm --filter @activity/api db:generate",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "test:e2e": "pnpm --filter @activity/api test:e2e",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.5.0",
+    "prettier": "^3.6.2",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}
