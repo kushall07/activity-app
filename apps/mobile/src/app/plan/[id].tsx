@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Alert, Image, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '../../auth/AppContext';
+import { JoinPanel } from '../../components/JoinPanel';
 import { Button, ErrorText, Loading, Screen } from '../../components/ui';
 import {
   formatCost,
@@ -24,7 +25,7 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Plan details: the plan, the host, and (for the host) edit and cancel. */
+/** Plan details: the plan, the host, "I'm in" for members, and requests, edit and cancel for the host. */
 export default function PlanScreen() {
   const { api } = useApp();
   const queryClient = useQueryClient();
@@ -124,6 +125,25 @@ export default function PlanScreen() {
       {p.isMine && open ? (
         <>
           <Button
+            label={
+              p.pendingRequests
+                ? `See requests (${p.pendingRequests})`
+                : p.seats.taken
+                  ? 'Who is going'
+                  : 'Requests'
+            }
+            onPress={() =>
+              router.push({ pathname: '/requests/[planId]', params: { planId: p.id } })
+            }
+          />
+          {p.chatId ? (
+            <Button
+              label="Open chat"
+              variant="secondary"
+              onPress={() => router.push({ pathname: '/chat/[id]', params: { id: p.chatId! } })}
+            />
+          ) : null}
+          <Button
             label="Edit plan"
             variant="secondary"
             onPress={() => router.push({ pathname: '/post', params: { edit: p.id } })}
@@ -137,11 +157,7 @@ export default function PlanScreen() {
           />
         </>
       ) : null}
-      {!p.isMine && open ? (
-        <Text style={styles.muted}>
-          Asking to join (“I'm in”) and chat with the host arrive in the next update.
-        </Text>
-      ) : null}
+      {!p.isMine && open ? <JoinPanel plan={p} /> : null}
       <Button label="Back" variant="secondary" onPress={() => router.back()} />
     </Screen>
   );

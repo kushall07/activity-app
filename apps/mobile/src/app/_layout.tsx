@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider } from '../auth/AppContext';
 import { ApiError } from '../lib/api';
+import { configureNotifications } from '../lib/push';
+import { RealtimeProvider } from '../realtime/RealtimeContext';
 
 export default function RootLayout() {
   const [queryClient] = useState(
@@ -20,12 +22,15 @@ export default function RootLayout() {
         },
       }),
   );
+  useEffect(() => configureNotifications(), []);
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <AppProvider>
-          <Stack screenOptions={{ headerShown: false }} />
-          <StatusBar style="auto" />
+          <RealtimeProvider>
+            <Stack screenOptions={{ headerShown: false }} />
+            <StatusBar style="auto" />
+          </RealtimeProvider>
         </AppProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

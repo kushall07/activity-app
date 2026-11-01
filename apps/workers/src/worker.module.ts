@@ -1,4 +1,5 @@
 import { RekognitionClient } from '@aws-sdk/client-rekognition';
+import { SNSClient } from '@aws-sdk/client-sns';
 import { S3Client } from '@aws-sdk/client-s3';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { Inject, Module, OnApplicationShutdown } from '@nestjs/common';
@@ -11,6 +12,9 @@ import { PhotoProcessHandler } from './jobs/photo-process.handler.js';
 import { PingHandler } from './jobs/ping.handler.js';
 import { SelfieVerifyHandler } from './jobs/selfie-verify.handler.js';
 import { PlanIndexHandler } from './jobs/plan-index.handler.js';
+import { PushSendHandler } from './jobs/push-send.handler.js';
+import { LogPushSender, PUSH_SENDER, SnsPushSender } from './push/push-sender.js';
+import { RequestExpirySweeper } from './requests/request-expiry-sweeper.js';
 import { UserPurgeHandler } from './jobs/user-purge.handler.js';
 import { createDb, createPool, DRIZZLE, PG_POOL } from './infra/database.js';
 import { OBJECT_STORE, S3ObjectStore } from './infra/object-store.js';
@@ -28,6 +32,7 @@ const HANDLERS = [
   SelfieVerifyHandler,
   UserPurgeHandler,
   PlanIndexHandler,
+  PushSendHandler,
 ];
 
 @Module({
@@ -111,8 +116,24 @@ const HANDLERS = [
       useFactory: (config: ConfigService<Env, true>) =>
         config.get('OPENSEARCH_REPLICAS', { infer: true }),
     },
+    {
+      provide: PUSH_SENDER,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) =>
+        config.get('PUSH_PROVIDER', { infer: true }) === 'sns'
+          ? new SnsPushSender(
+              new SNSClient({ region: config.get('AWS_REGION', { infer: true }) }),
+              {
+                android: config.get('SNS_ANDROID_APP_ARN', { infer: true }),
+                ios: config.get('SNS_IOS_APP_ARN', { infer: true }),
+              },
+              config.get('SNS_APNS_PLATFORM', { infer: true }),
+            )
+          : new LogPushSender(),
+    },
     PlanIndexer,
     PlanIndexSweeper,
+    RequestExpirySweeper,
     ...HANDLERS,
     {
       provide: JOB_HANDLERS,

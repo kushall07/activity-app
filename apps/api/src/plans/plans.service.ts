@@ -1,5 +1,5 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
-import { activities, plans, profiles, users, venues } from '@activity/db';
+import { activities, planRequests, plans, profiles, users, venues } from '@activity/db';
 import {
   ageOn,
   BENGALURU_AREAS,
@@ -11,16 +11,25 @@ import {
   type CreatePlan,
   type Plan,
   type PlanIndexPayload,
+  type RequestStatus,
 } from '@activity/shared';
-import { and, asc, desc, eq, gt, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, or, sql, type SQL } from 'drizzle-orm';
 import type { z } from 'zod';
 import { ApiException } from '../common/errors.js';
+import { ChatService } from '../chat/chat.service.js';
 import { JobsService } from '../common/jobs.service.js';
+import { NotifierService } from '../common/notifier.service.js';
 import { RateLimiter } from '../common/rate-limiter.js';
 import { StorageService } from '../common/storage.service.js';
 import { DRIZZLE } from '../database/database.constants.js';
 import type { Database } from '../database/database.module.js';
-import { audienceWhere, geoPoint, planDetailColumns, planEndsAt } from './plan-queries.js';
+import {
+  acceptedOnPlan,
+  audienceWhere,
+  geoPoint,
+  planDetailColumns,
+  planEndsAt,
+} from './plan-queries.js';
 import { SEARCH_CLIENT, type MaybeSearchClient } from './search.module.js';
 import { ViewerService, type Viewer } from './viewer.service.js';
 
@@ -39,6 +48,9 @@ type DetailRow = {
     verifiedAt: Date | null;
   };
   hostPhotoPrefix: string | null;
+  myRequest: { id: string; status: RequestStatus; expires_at: string } | null;
+  pendingRequests: number | null;
+  chatId: string | null;
 };
 
 const notFound = () => new ApiException(HttpStatus.NOT_FOUND, 'not_found', 'Plan not found');
@@ -54,6 +66,8 @@ export class PlansService {
     private readonly jobs: JobsService,
     private readonly limiter: RateLimiter,
     private readonly storage: StorageService,
+    private readonly chat: ChatService,
+    private readonly notifier: NotifierService,
   ) {}
 
   async create(userId: string, input: CreatePlan): Promise<Plan> {
@@ -143,6 +157,7 @@ export class PlansService {
         costSplit: p.costSplit,
         costPerPersonInr: p.costPerPersonInr,
         verifiedOnly: p.verifiedOnly,
+        autoAccept: p.autoAccept,
         note: p.note,
         ...patch,
         // Switching between a venue and a custom place clears the other.
@@ -187,25 +202,52 @@ export class PlansService {
     return this.getForHost(userId, planId);
   }
 
-  /** Idempotent: cancelling a cancelled plan returns it unchanged. */
+  /**
+   * Idempotent: cancelling a cancelled plan returns it unchanged. Waiting
+   * requests are closed in the same transaction; accepted members get a push
+   * and a line in the plan's chat.
+   */
   async cancel(userId: string, planId: string): Promise<Plan> {
-    const [row] = await this.db
-      .update(plans)
-      .set({ status: 'cancelled', cancelledAt: new Date(), version: sql`${plans.version} + 1` })
-      .where(
-        and(
-          eq(plans.id, planId),
-          eq(plans.hostId, userId),
-          inArray(plans.status, ['open', 'full']),
-        ),
-      )
-      .returning({ version: plans.version });
-    if (row) {
-      await this.enqueueIndex(planId, row.version);
-    } else {
-      // Either not theirs / missing (404) or already cancelled/completed (return as is).
-      await this.getForHost(userId, planId);
+    const result = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(plans)
+        .set({ status: 'cancelled', cancelledAt: new Date(), version: sql`${plans.version} + 1` })
+        .where(
+          and(
+            eq(plans.id, planId),
+            eq(plans.hostId, userId),
+            inArray(plans.status, ['open', 'full']),
+          ),
+        )
+        .returning({ version: plans.version, activitySlug: plans.activitySlug });
+      if (!row) return null;
+      await tx
+        .update(planRequests)
+        .set({ status: 'cancelled', decidedAt: new Date() })
+        .where(and(eq(planRequests.planId, planId), eq(planRequests.status, 'pending')));
+      const accepted = await tx
+        .select({ userId: planRequests.requesterId })
+        .from(planRequests)
+        .where(and(eq(planRequests.planId, planId), eq(planRequests.status, 'accepted')));
+      const change = await this.chat.announce(tx, planId, 'The host cancelled this plan.');
+      return { ...row, accepted: accepted.map((a) => a.userId), change };
+    });
+
+    if (result) {
+      await this.enqueueIndex(planId, result.version);
+      await this.chat.broadcast(result.change);
+      const [activity] = await this.db
+        .select({ name: activities.name })
+        .from(activities)
+        .where(eq(activities.slug, result.activitySlug));
+      await this.notifier.push({
+        userIds: result.accepted,
+        title: 'Plan cancelled',
+        body: `The host cancelled ${activity?.name ?? 'the plan'}. Sorry! Find another in Explore.`,
+        data: { kind: 'plan.cancelled', planId },
+      });
     }
+    // Missing or not theirs throws 404; already cancelled/completed returns as is.
     return this.getForHost(userId, planId);
   }
 
@@ -227,9 +269,12 @@ export class PlansService {
         eq(plans.id, planId),
         inArray(plans.status, ['open', 'full']),
         sql`${planEndsAt} > now()`,
-        audienceWhere(viewer),
+        or(audienceWhere(viewer), acceptedOnPlan(userId)),
       )!,
       origin,
+      undefined,
+      1,
+      userId,
     );
     if (!plan) throw notFound();
     return plan;
@@ -268,7 +313,7 @@ export class PlansService {
     return ids.map((id) => byId.get(id)).filter((p): p is Plan => !!p);
   }
 
-  private async getForHost(userId: string, planId: string, origin?: { lat: number; lng: number }) {
+  async getForHost(userId: string, planId: string, origin?: { lat: number; lng: number }) {
     const [plan] = await this.selectDetails(
       and(eq(plans.id, planId), eq(plans.hostId, userId))!,
       origin,
@@ -288,7 +333,7 @@ export class PlansService {
     viewerId?: string,
   ): Promise<Plan[]> {
     const rows = (await this.db
-      .select(planDetailColumns(origin))
+      .select(planDetailColumns(origin, viewerId))
       .from(plans)
       .innerJoin(activities, eq(activities.slug, plans.activitySlug))
       .innerJoin(profiles, eq(profiles.userId, plans.hostId))
@@ -330,6 +375,7 @@ export class PlansService {
       costSplit: p.costSplit,
       costPerPersonInr: p.costPerPersonInr,
       verifiedOnly: p.verifiedOnly,
+      autoAccept: p.autoAccept,
       note: p.note,
       // A plan that has ended reads as completed until milestone 7's check-in flow closes it.
       status: ended && (p.status === 'open' || p.status === 'full') ? 'completed' : p.status,
@@ -345,6 +391,15 @@ export class PlansService {
           : null,
       },
       isMine: p.hostId === viewerId,
+      myRequest: r.myRequest
+        ? {
+            id: r.myRequest.id,
+            status: r.myRequest.status,
+            expiresAt: new Date(r.myRequest.expires_at).toISOString(),
+          }
+        : null,
+      pendingRequests: r.pendingRequests ?? null,
+      chatId: r.chatId ?? null,
       createdAt: p.createdAt.toISOString(),
     };
   }
@@ -365,6 +420,7 @@ export class PlansService {
       costSplit: input.costSplit,
       costPerPersonInr: input.costSplit === 'free' ? 0 : (input.costPerPersonInr ?? null),
       verifiedOnly: input.verifiedOnly,
+      autoAccept: input.autoAccept,
       note: input.note,
     };
   }
@@ -433,7 +489,7 @@ export class PlansService {
    * Fast path to the search index. If the enqueue fails, the worker's sweeper
    * still picks the plan up (version > indexed_version), so this never fails the request.
    */
-  private async enqueueIndex(planId: string, version: number) {
+  async enqueueIndex(planId: string, version: number) {
     if (!this.search) return;
     try {
       await this.jobs.enqueue<PlanIndexPayload>(

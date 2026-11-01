@@ -7,6 +7,7 @@ import {
   formatWhen,
   formatWho,
   INTENT_LABEL,
+  REQUEST_LABEL,
 } from '../lib/planFormat';
 import { colors } from '../theme';
 
@@ -59,6 +60,15 @@ export function PlanCard({ plan, onPress }: { plan: Plan; onPress?: () => void }
         ) : null}
         {plan.verifiedOnly ? <Text style={styles.tag}>Verified only</Text> : null}
       </View>
+      {plan.pendingRequests ? (
+        <Text style={styles.requests}>
+          🙋 {plan.pendingRequests} {plan.pendingRequests === 1 ? 'person wants' : 'people want'} to
+          join
+        </Text>
+      ) : null}
+      {plan.myRequest ? (
+        <Text style={styles.requests}>{REQUEST_LABEL[plan.myRequest.status]}</Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -73,6 +83,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   pressed: { opacity: 0.85 },
+  requests: { fontSize: 14, fontWeight: '600', color: colors.accent, marginTop: 4 },
   closed: { opacity: 0.6 },
   top: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 },
   flex: { flex: 1 },

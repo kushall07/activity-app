@@ -1,6 +1,13 @@
 import {
   activitiesResponseSchema,
   apiErrorSchema,
+  chatsResponseSchema,
+  chatSummarySchema,
+  messageSchema,
+  messagesResponseSchema,
+  myRequestsResponseSchema,
+  planRequestsResponseSchema,
+  requestDecisionResponseSchema,
   authTokensSchema,
   createPhotoUploadResponseSchema,
   createSelfieUploadResponseSchema,
@@ -17,6 +24,8 @@ import {
   venuesResponseSchema,
   verifyOtpResponseSchema,
   type CreatePlanRequest,
+  type CreateRequest,
+  type RegisterDevice,
   type CreateUploadRequest,
   type HealthResponse,
   type UpdatePlanRequest,
@@ -165,6 +174,11 @@ export function createApiClient(
 
   return {
     baseUrl,
+    /** A usable access token for the chat socket; `force` refreshes even if one is cached. */
+    accessToken: async (force = false): Promise<string | null> => {
+      if (force || !session?.getAccessToken()) await refresh();
+      return session?.getAccessToken() ?? null;
+    },
     /** Readiness returns 503 with the same body when a dependency is down; still render it. */
     health: (): Promise<HealthResponse> =>
       request('GET', '/health/ready', { schema: healthResponseSchema, allowStatus: [503] }),
@@ -236,6 +250,46 @@ export function createApiClient(
       request('POST', `/v1/plans/${id}/cancel`, { ...authed, schema: planSchema }),
     myPlans: (scope: 'upcoming' | 'past') =>
       request('GET', `/v1/me/plans?scope=${scope}`, { ...authed, schema: myPlansResponseSchema }),
+
+    // --- Requests ("I'm in") ---
+    requestToJoin: (planId: string, body: CreateRequest) =>
+      request('POST', `/v1/plans/${planId}/requests`, {
+        ...authed,
+        body,
+        schema: requestDecisionResponseSchema,
+      }),
+    planRequests: (planId: string) =>
+      request('GET', `/v1/plans/${planId}/requests`, {
+        ...authed,
+        schema: planRequestsResponseSchema,
+      }),
+    decideRequest: (requestId: string, action: 'accept' | 'decline' | 'withdraw') =>
+      request('POST', `/v1/requests/${requestId}/${action}`, {
+        ...authed,
+        schema: requestDecisionResponseSchema,
+      }),
+    myRequests: () =>
+      request('GET', '/v1/me/requests', { ...authed, schema: myRequestsResponseSchema }),
+
+    // --- Chat (REST; live updates come over the socket) ---
+    chats: () => request('GET', '/v1/chats', { ...authed, schema: chatsResponseSchema }),
+    chat: (id: string) =>
+      request('GET', `/v1/chats/${id}`, { ...authed, schema: chatSummarySchema }),
+    messages: (id: string, params: { before?: number; after?: number; limit?: number } = {}) =>
+      request('GET', `/v1/chats/${id}/messages${toQuery(params)}`, {
+        ...authed,
+        schema: messagesResponseSchema,
+      }),
+    sendMessage: (id: string, body: { clientId: string; body: string }) =>
+      request('POST', `/v1/chats/${id}/messages`, { ...authed, body, schema: messageSchema }),
+    markRead: (id: string, messageId: number) =>
+      request<void>('POST', `/v1/chats/${id}/read`, { ...authed, body: { messageId } }),
+
+    // --- Push ---
+    registerDevice: (device: RegisterDevice) =>
+      request<void>('PUT', '/v1/me/devices', { ...authed, body: device }),
+    removeDevice: (device: RegisterDevice) =>
+      request<void>('POST', '/v1/me/devices/remove', { ...authed, body: device }),
   };
 }
 

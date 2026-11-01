@@ -88,6 +88,17 @@ module "search" {
   alarm_topic_arns           = [aws_sns_topic.alarms.arn]
 }
 
+module "push" {
+  source                        = "../modules/push"
+  name                          = local.name
+  fcm_service_account_parameter = var.fcm_service_account_parameter
+  apns_signing_key_parameter    = var.apns_signing_key_parameter
+  apns_key_id                   = var.apns_key_id
+  apns_team_id                  = var.apns_team_id
+  apns_bundle_id                = var.apns_bundle_id
+  apns_sandbox                  = var.apns_sandbox
+}
+
 # --- Application services -------------------------------------------------
 
 locals {
@@ -119,11 +130,20 @@ locals {
     PHOTOS_PUBLIC_BASE_URL = "https://${module.storage.cdn_domain_name}"
   }
 
-  worker_env = {
-    MODERATION_PROVIDER    = "rekognition"
-    SELFIE_MATCH_THRESHOLD = tostring(var.selfie_match_threshold)
-    OPENSEARCH_REPLICAS    = tostring(module.search.replicas)
-  }
+  worker_env = merge(
+    {
+      MODERATION_PROVIDER    = "rekognition"
+      SELFIE_MATCH_THRESHOLD = tostring(var.selfie_match_threshold)
+      OPENSEARCH_REPLICAS    = tostring(module.search.replicas)
+      PUSH_PROVIDER          = "sns"
+      SNS_APNS_PLATFORM      = module.push.apns_platform
+    },
+    # Each OS's push is optional until its credentials are in SSM.
+    { for k, v in {
+      SNS_ANDROID_APP_ARN = module.push.android_app_arn
+      SNS_IOS_APP_ARN     = module.push.ios_app_arn
+    } : k => v if v != null },
+  )
 
   search_domain_arn = "arn:aws:es:${var.region}:${data.aws_caller_identity.current.account_id}:domain/${local.name}/*"
   search_actions    = ["es:ESHttpGet", "es:ESHttpHead", "es:ESHttpPost", "es:ESHttpPut", "es:ESHttpDelete"]
@@ -220,6 +240,21 @@ data "aws_iam_policy_document" "worker_task" {
     sid       = "IndexPlans"
     actions   = local.search_actions
     resources = [local.search_domain_arn]
+  }
+  statement {
+    sid       = "RegisterPushDevices"
+    actions   = ["sns:CreatePlatformEndpoint"]
+    resources = ["arn:aws:sns:${var.region}:${data.aws_caller_identity.current.account_id}:app/*/${local.name}-*"]
+  }
+  statement {
+    sid = "SendPush"
+    actions = [
+      "sns:Publish",
+      "sns:GetEndpointAttributes",
+      "sns:SetEndpointAttributes",
+      "sns:DeleteEndpoint",
+    ]
+    resources = ["arn:aws:sns:${var.region}:${data.aws_caller_identity.current.account_id}:endpoint/*/${local.name}-*/*"]
   }
 }
 

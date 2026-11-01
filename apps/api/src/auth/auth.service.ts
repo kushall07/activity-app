@@ -156,7 +156,19 @@ export class AuthService {
   /** Account deletion (required by the App Store and Play Store). */
   async deleteAccount(user: AuthUser): Promise<void> {
     await this.provider.deleteUser(user.sub);
-    await this.db.delete(users).where(eq(users.id, user.id));
+    await this.db.transaction(async (tx) => {
+      // Give back seats on upcoming plans the member had joined; the cascade below
+      // removes their requests, and the sweeper reindexes the plans (version bump).
+      await tx.execute(sql`
+        update plans set
+          seats_taken = seats_taken - 1,
+          status = case when status = 'full' then 'open'::plan_status else status end,
+          version = version + 1
+        where starts_at > now() and id in (
+          select plan_id from plan_requests where requester_id = ${user.id} and status = 'accepted'
+        )`);
+      await tx.delete(users).where(eq(users.id, user.id));
+    });
     const payload: UserPurgePayload = { userId: user.id };
     await this.jobs.enqueue(JOB_TYPES.userPurge, payload, `${JOB_TYPES.userPurge}:${user.id}`);
   }

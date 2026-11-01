@@ -8,6 +8,7 @@ import { AuthService } from './auth.service.js';
 import { CognitoOtpProvider } from './cognito-otp.provider.js';
 import { DevOtpProvider } from './dev-otp.provider.js';
 import { OTP_PROVIDER, type OtpProvider } from './otp-provider.js';
+import { TokenAuthenticator } from './token-authenticator.js';
 
 @Module({
   controllers: [AuthController],
@@ -31,8 +32,9 @@ import { OTP_PROVIDER, type OtpProvider } from './otp-provider.js';
       },
     },
     AuthService,
+    TokenAuthenticator,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
-  exports: [OTP_PROVIDER],
+  exports: [OTP_PROVIDER, TokenAuthenticator],
 })
 export class AuthModule {}

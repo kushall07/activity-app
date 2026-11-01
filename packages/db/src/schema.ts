@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   check,
   customType,
@@ -243,6 +244,8 @@ export const plans = pgTable(
     costSplit: costSplit('cost_split').notNull().default('each_pays_own'),
     costPerPersonInr: integer('cost_per_person_inr'),
     verifiedOnly: boolean('verified_only').notNull().default(false),
+    /** Accept verified members who pass every filter without asking the host. */
+    autoAccept: boolean('auto_accept').notNull().default(false),
     note: text('note').notNull().default(''),
     status: planStatus('status').notNull().default('open'),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
@@ -268,4 +271,174 @@ export const plans = pgTable(
     check('plans_age_check', sql`${t.ageMin} >= 18 and ${t.ageMin} <= ${t.ageMax}`),
     check('plans_wanted_genders_check', sql`cardinality(${t.wantedGenders}) > 0`),
   ],
+);
+
+// --- Requests, matching and chat (milestone 4) --------------------------------
+
+export const requestStatus = pgEnum('request_status', [
+  /** Waiting for the host. Counts as expired once `expires_at` passes. */
+  'pending',
+  'accepted',
+  'declined',
+  /** The requester took it back (before or after being accepted). */
+  'withdrawn',
+  /** Nobody answered in time (24 h, or the plan started). */
+  'expired',
+  /** The host cancelled the plan. */
+  'cancelled',
+]);
+
+/**
+ * "I'm in": a member asks to join a plan. One request per member per plan,
+ * so a declined member cannot keep asking. Accepting takes a seat in the same
+ * transaction that updates `plans.seats_taken`.
+ */
+export const planRequests = pgTable(
+  'plan_requests',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => plans.id, { onDelete: 'cascade' }),
+    requesterId: uuid('requester_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: requestStatus('status').notNull().default('pending'),
+    /** Optional note to the host. */
+    message: text('message').notNull().default(''),
+    /** The requester's level for this activity, when the plan asks for one. */
+    skillLevel: skillLevel('skill_level'),
+    /** Gender at request time; group plans count accepted seats per gender. */
+    requesterGender: gender('requester_gender').notNull(),
+    /** Match score 0-100 and the reasons shown to the host. */
+    score: smallint('score').notNull().default(0),
+    scoreReasons: text('score_reasons')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('plan_requests_plan_requester_key').on(t.planId, t.requesterId),
+    // Host's request stack: pending requests for a plan, best first.
+    index('plan_requests_plan_status_score_idx').on(t.planId, t.status, t.score),
+    index('plan_requests_requester_created_idx').on(t.requesterId, t.createdAt),
+    // Expiry sweeper.
+    index('plan_requests_pending_expires_idx')
+      .on(t.expiresAt)
+      .where(sql`${t.status} = 'pending'`),
+    check('plan_requests_score_check', sql`${t.score} between 0 and 100`),
+  ],
+);
+
+/** Either member hides the other everywhere: feed, requests and plans. */
+export const blocks = pgTable(
+  'blocks',
+  {
+    blockerId: uuid('blocker_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    blockedId: uuid('blocked_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('blocks_pair_key').on(t.blockerId, t.blockedId),
+    index('blocks_blocked_idx').on(t.blockedId),
+    check('blocks_not_self_check', sql`${t.blockerId} <> ${t.blockedId}`),
+  ],
+);
+
+/** One chat per plan: the host plus everyone accepted. Created on the first accept. */
+export const chats = pgTable(
+  'chats',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    planId: uuid('plan_id')
+      .notNull()
+      .references(() => plans.id, { onDelete: 'cascade' }),
+    /** Denormalised for the chat list's sort order. */
+    lastMessageAt: timestamp('last_message_at', { withTimezone: true }).notNull().defaultNow(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('chats_plan_key').on(t.planId)],
+);
+
+export const chatRole = pgEnum('chat_role', ['host', 'member']);
+
+export const chatMembers = pgTable(
+  'chat_members',
+  {
+    chatId: uuid('chat_id')
+      .notNull()
+      .references(() => chats.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: chatRole('role').notNull(),
+    joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Set when the member leaves the plan; they lose access to the chat. */
+    leftAt: timestamp('left_at', { withTimezone: true }),
+    /** Highest message id the member has read. */
+    lastReadMessageId: bigint('last_read_message_id', { mode: 'number' }).notNull().default(0),
+  },
+  (t) => [
+    uniqueIndex('chat_members_chat_user_key').on(t.chatId, t.userId),
+    index('chat_members_user_idx').on(t.userId),
+  ],
+);
+
+export const messageKind = pgEnum('message_kind', ['text', 'system']);
+
+/**
+ * Chat messages. The identity id gives a total order per chat that clients use
+ * for paging, catch-up after a reconnect and read markers.
+ */
+export const messages = pgTable(
+  'messages',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    chatId: uuid('chat_id')
+      .notNull()
+      .references(() => chats.id, { onDelete: 'cascade' }),
+    /** Null for system messages ("Asha joined"). */
+    senderId: uuid('sender_id').references(() => users.id, { onDelete: 'cascade' }),
+    kind: messageKind('kind').notNull().default('text'),
+    body: text('body').notNull(),
+    /** Client-generated id: a retried send returns the original message. */
+    clientId: uuid('client_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('messages_chat_id_idx').on(t.chatId, t.id),
+    uniqueIndex('messages_sender_client_key').on(t.senderId, t.clientId),
+  ],
+);
+
+export const devicePlatform = pgEnum('device_platform', ['ios', 'android']);
+
+/** Push targets: one row per app install. The SNS endpoint is created by the worker. */
+export const devices = pgTable(
+  'devices',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    platform: devicePlatform('platform').notNull(),
+    /** Native FCM registration token or APNs device token. */
+    token: text('token').notNull(),
+    endpointArn: text('endpoint_arn'),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('devices_token_key').on(t.token), index('devices_user_idx').on(t.userId)],
 );

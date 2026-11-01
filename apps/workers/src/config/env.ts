@@ -42,6 +42,17 @@ export const envSchema = z.object({
   OPENSEARCH_REPLICAS: z.coerce.number().int().min(0).max(2).default(1),
   /** How often the sweeper indexes plans whose latest version is not in the index yet. */
   SEARCH_SWEEP_INTERVAL_SECONDS: z.coerce.number().int().min(5).max(3600).default(30),
+  /** How often waiting requests past their expiry are marked expired. */
+  REQUEST_SWEEP_INTERVAL_SECONDS: z.coerce.number().int().min(5).max(3600).default(60),
+
+  /** `sns` sends through Amazon SNS mobile push. `log` only logs (local dev); refused in production. */
+  PUSH_PROVIDER: z.enum(['sns', 'log']).default('log'),
+  /** SNS platform application for Android (FCM). Unset: Android pushes are skipped. */
+  SNS_ANDROID_APP_ARN: z.string().optional(),
+  /** SNS platform application for iOS (APNs). Unset: iOS pushes are skipped. */
+  SNS_IOS_APP_ARN: z.string().optional(),
+  /** Must match the iOS platform application: APNS (App Store/TestFlight) or APNS_SANDBOX. */
+  SNS_APNS_PLATFORM: z.enum(['APNS', 'APNS_SANDBOX']).default('APNS'),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -54,6 +65,13 @@ export function validateEnv(raw: Record<string, unknown>): Env {
           code: 'custom',
           path: ['OPENSEARCH_URL'],
           message: 'OPENSEARCH_URL is required when SEARCH_PROVIDER=opensearch',
+        });
+      }
+      if (env.NODE_ENV === 'production' && env.PUSH_PROVIDER === 'log') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['PUSH_PROVIDER'],
+          message: 'PUSH_PROVIDER=log is not allowed in production',
         });
       }
       if (env.NODE_ENV === 'production' && env.MODERATION_PROVIDER === 'none') {

@@ -37,6 +37,16 @@ Cognito setup (Essentials tier, passwordless-only client, deletion protection in
    numbers verified in the SMS sandbox. Expect this to take 1 to 3 weeks; start early.
 4. Cognito Essentials tier (needed for passwordless SMS OTP) bills per monthly active user
    beyond the free tier, plus the SMS cost per OTP (roughly Rs 0.15 to 0.25 each in India).
+5. **Push notifications (optional per OS; the stack applies without them).**
+   - Android: a Firebase project with the app (`com.activityapp.mobile`) added; download its
+     `google-services.json` into `apps/mobile/` and set `android.googleServicesFile` in
+     `app.json`; create a service account key with the Firebase Cloud Messaging role and store
+     the JSON: `aws ssm put-parameter --type SecureString --name /activity/staging/push/fcm --value file://key.json`.
+   - iOS: an Apple Developer account; create an APNs auth key (.p8) and store it:
+     `aws ssm put-parameter --type SecureString --name /activity/staging/push/apns-key --value file://AuthKey.p8`.
+   - Then set `fcm_service_account_parameter`, `apns_signing_key_parameter`, `apns_key_id`,
+     `apns_team_id` and `apns_bundle_id` in `envs/<env>.tfvars` (staging can set
+     `apns_sandbox = true` for development builds) and apply.
 
 ## First apply
 

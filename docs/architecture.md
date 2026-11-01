@@ -147,6 +147,63 @@ app ─GET /v1/plans?lat&lng&filters─> API: OpenSearch (ids) ─or─ PostGIS 
   shown in IST. Posting is four steps (what, when and where, who, cost) and the same
   screen edits a plan.
 
+## Requests, matching, chat and push (milestone 4)
+
+```
+app ─POST /v1/plans/:id/requests─> API: hard filters, score, insert (plan row locked) ─push.send─> host
+host ─POST /v1/requests/:id/accept─> API: one transaction: request accepted, seats_taken+1,
+     status full?, version+1, chat created/joined, system message ─> plan.index, socket fan-out, push
+app ═wss /v1/ws═> any API task ─Redis PUBLISH realtime:v1─> every task ─> members' open sockets
+worker: push.send ─> SNS CreatePlatformEndpoint (once per token) ─> Publish ─> FCM / APNs
+```
+
+- **"I'm in".** One request per member per plan (a "no" is final and the plan leaves their
+  feed). Hard filters are the feed's (audience, seats, not started, verified-only) plus
+  blocks either way and seats per gender on group plans. Abuse and fairness: 5 requests a
+  member a day, 20 waiting requests a plan, and a request expires after 24 h or at the
+  plan's start. Reads treat a past-expiry request as expired at once; a worker sweeper
+  stores the status every minute.
+- **Scoring** ranks the host's stack with the plan doc's weights: distance from the
+  member's neighbourhood (25), level and interest fit (20), verified badge (20), intent
+  (15), new-member boost (10). "Past chemistry" joins with ratings. The score is computed
+  once, at request time, and the top three reasons ("Also intermediate", "Lives nearby")
+  are stored with it so the stack is a single indexed read.
+- **Seats never oversell.** Accept, auto-accept, leave and cancel all lock the plan row
+  (`select ... for update`) and update `plans.seats_taken`, `status` and `version` in the
+  same transaction as the request; `plans_seats_check` backs this up. The e2e suite fires
+  five accepts at a two-seat plan in parallel. The version bump drives the search index.
+- **Auto-accept** (host option) admits verified members who pass every filter straight away.
+- **Chat: one per plan**, created on the first accept, members are the host plus everyone
+  accepted. Leaving the plan removes access. Messages live in Postgres (`messages`, identity
+  id per message, index on `(chat_id, id)`), next to the membership they are authorised
+  against. Sends are idempotent on a client-generated id, so a retry after a dropped
+  connection never duplicates.
+- **WebSocket on the API service, not API Gateway + Lambda + DynamoDB** (the plan doc's
+  first sketch). At launch scale (hundreds of concurrent sockets, tens of messages a second
+  at peak) the API tasks handle sockets easily behind the existing ALB, and keeping one
+  codebase means chat uses the same auth, rate limits and data as everything else. Fan-out
+  across tasks is one Redis pub/sub channel. Revisit when concurrent sockets pass ~50k or
+  messages reach hundreds of millions: move sockets to API Gateway WebSocket and partition
+  or move `messages`.
+- **Socket protocol.** First frame is `{type:"auth", token}` (tokens stay out of ALB logs);
+  then `send`/`ack`, `message`, `read`, `chat` (members changed) and `ping`. The server pings
+  every 25 s (ALB idle timeout is 60 s) and drops dead sockets. Deploys close sockets with
+  1012; the app reconnects with jittered backoff and fetches `GET messages?after=<last id>`.
+  REST covers history and is the send fallback while the socket is down.
+- **Presence** (for push decisions) is a Redis sorted set per member of live connection ids
+  scored by expiry, refreshed by heartbeats, so a crashed task's sockets age out on their
+  own. Chat pushes go only to members with no live socket.
+- **Push through SNS**, not Expo's service: the app registers the native FCM/APNs token
+  (`PUT /v1/me/devices`), the worker creates an SNS endpoint on first send and publishes an
+  FCM v1 or APNs payload. Dead tokens (`EndpointDisabled`) are deleted. Push is best effort:
+  enqueue failures never fail a request, and a failed device is logged rather than retried
+  (a retry would re-notify every other device). Notifications: new request (host), accepted
+  (member), chat message (offline members, collapsed per chat), plan cancelled (members).
+  Declines are not pushed. Platform credentials live in SSM and are optional per OS.
+- **Blocks** hide the two members from each other in the feed, plan details and requests,
+  and decline waiting requests between them. Reports and the rest of safety are milestone 6.
+- Deleting an account gives back seats on upcoming plans the member had joined.
+
 ## Deliberately deferred
 
 - Liveness detection for selfies (Rekognition Face Liveness needs a native SDK component;
@@ -154,9 +211,13 @@ app ─GET /v1/plans?lat&lng&filters─> API: OpenSearch (ids) ─or─ PostGIS 
 - Cognito threat protection (Plus tier) and WAF on the API.
 - Changing phone number.
 - Custom domain + ACM certificate: needs a chosen app name/domain.
-- WAF, RDS Proxy, WebSocket chat: added in the milestones that need them.
+- WAF, RDS Proxy: added in the milestones that need them.
 - Place search with a maps provider (Google Places or Amazon Location) and a map pin
   picker; today a custom place is a name plus a neighbourhood.
-- Push notifications for new plans in followed activities (milestone 4 with SNS).
+- Push notifications for new plans in followed activities (needs "follow an activity").
+- "For you" ranking of the Explore feed with the match score (the feed sorts by time or distance today).
+- Premium tier lifting the 5 requests a day (milestone 5 with payments).
+- Typing indicators, photos in chat, and deleting SNS endpoints when an account is deleted
+  (they are disabled by the OS once the app is gone).
 - Closing ended plans in the database (they read as completed); done with check-in in milestone 6.
 - A dedicated least-privilege DB user for the app (currently the RDS master user).

@@ -6,6 +6,7 @@ import { AppProvider } from '../auth/AppContext';
 import { memoryStorage, Session } from '../lib/session';
 import ExploreScreen from '../app/(tabs)/explore';
 import PostScreen from '../app/(tabs)/post';
+import { JoinPanel } from '../components/JoinPanel';
 
 jest.mock('expo-secure-store', () => ({}));
 jest.mock('expo-location', () => ({
@@ -70,6 +71,7 @@ const plan = {
   costSplit: 'split_equally',
   costPerPersonInr: 300,
   verifiedOnly: false,
+  autoAccept: false,
   note: '',
   status: 'open',
   distanceKm: 0.4,
@@ -82,6 +84,9 @@ const plan = {
     photoUrl: null,
   },
   isMine: false,
+  myRequest: null,
+  pendingRequests: null,
+  chatId: null,
   createdAt: '2030-11-01T10:00:00Z',
 };
 
@@ -208,5 +213,68 @@ describe('PostScreen', () => {
     await screen.findByLabelText('Badminton', {}, SLOW);
     await fireEvent.press(screen.getByText('Next'));
     expect(screen.getByText('Pick an activity')).toBeTruthy();
+  });
+});
+
+describe('JoinPanel', () => {
+  const REQUEST_ID = '9a8b7c6d-1e2f-4a3b-8c9d-0e1f2a3b4c5d';
+
+  it("sends an I'm in request with a note and shows it as requested", async () => {
+    const requested = {
+      ...plan,
+      myRequest: { id: REQUEST_ID, status: 'pending', expiresAt: '2030-11-02T10:00:00.000Z' },
+    };
+    const calls = mockApi({
+      [`POST /v1/plans/${PLAN_ID}/requests`]: () =>
+        json(201, { request: { id: REQUEST_ID, status: 'pending' }, plan: requested }),
+    });
+    await wrap(<JoinPanel plan={plan as never} />);
+    fireEvent.press(screen.getByText("I'm in"));
+    fireEvent.changeText(
+      await screen.findByLabelText('Say something (optional)'),
+      'Bringing shuttles',
+    );
+    await screen.findByDisplayValue('Bringing shuttles');
+    fireEvent.press(screen.getByText('Send request'));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({ message: 'Bringing shuttles' });
+  });
+
+  it('shows a waiting request with a way to withdraw', async () => {
+    mockApi({});
+    await wrap(
+      <JoinPanel
+        plan={
+          {
+            ...plan,
+            myRequest: { id: REQUEST_ID, status: 'pending', expiresAt: '2030-11-02T10:00:00.000Z' },
+          } as never
+        }
+      />,
+    );
+    expect(await screen.findByText('Requested')).toBeTruthy();
+    expect(screen.getByText('Withdraw request')).toBeTruthy();
+  });
+
+  it('offers the chat once accepted', async () => {
+    mockApi({});
+    await wrap(
+      <JoinPanel
+        plan={
+          {
+            ...plan,
+            chatId: PLAN_ID,
+            myRequest: {
+              id: REQUEST_ID,
+              status: 'accepted',
+              expiresAt: '2030-11-02T10:00:00.000Z',
+            },
+          } as never
+        }
+      />,
+    );
+    fireEvent.press(await screen.findByText('Open chat'));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/chat/[id]', params: { id: PLAN_ID } });
   });
 });

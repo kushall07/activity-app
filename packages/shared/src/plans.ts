@@ -47,12 +47,21 @@ export const SKILL_LEVELS = ['any', 'beginner', 'intermediate', 'advanced'] as c
 export const COST_SPLITS = ['free', 'host_pays', 'split_equally', 'each_pays_own'] as const;
 export const PLAN_STATUSES = ['open', 'full', 'cancelled', 'completed'] as const;
 export const FEED_SORTS = ['soonest', 'nearest'] as const;
+export const REQUEST_STATUSES = [
+  'pending',
+  'accepted',
+  'declined',
+  'withdrawn',
+  'expired',
+  'cancelled',
+] as const;
 
 export const activityCategorySchema = z.enum(ACTIVITY_CATEGORIES);
 export const skillLevelSchema = z.enum(SKILL_LEVELS);
 export const costSplitSchema = z.enum(COST_SPLITS);
 export const planStatusSchema = z.enum(PLAN_STATUSES);
 export const feedSortSchema = z.enum(FEED_SORTS);
+export const requestStatusSchema = z.enum(REQUEST_STATUSES);
 
 /**
  * Bengaluru neighbourhoods with approximate centre points. Used for custom
@@ -208,6 +217,8 @@ const planFields = {
     .nullable()
     .optional(),
   verifiedOnly: z.boolean().default(false),
+  /** Verified members who pass every filter join without waiting for the host. */
+  autoAccept: z.boolean().default(false),
   note: publicText(PLAN_RULES.noteMaxLength).default(''),
 };
 
@@ -282,6 +293,7 @@ export const updatePlanRequestSchema = z
     costSplit: costSplitSchema.optional(),
     costPerPersonInr: planFields.costPerPersonInr,
     verifiedOnly: z.boolean().optional(),
+    autoAccept: z.boolean().optional(),
     note: publicText(PLAN_RULES.noteMaxLength).optional(),
   })
   .strict();
@@ -360,12 +372,21 @@ export const planSchema = z.object({
   costSplit: costSplitSchema,
   costPerPersonInr: z.number().int().nullable(),
   verifiedOnly: z.boolean(),
+  autoAccept: z.boolean(),
   note: z.string(),
   status: planStatusSchema,
   /** Distance from the viewer's search point, when the request had one. */
   distanceKm: z.number().nullable(),
   host: planHostSchema,
   isMine: z.boolean(),
+  /** The viewer's own "I'm in" request on this plan, if any (null for the host). */
+  myRequest: z
+    .object({ id: z.string().uuid(), status: requestStatusSchema, expiresAt: z.string() })
+    .nullable(),
+  /** Host only: requests waiting for an answer. */
+  pendingRequests: z.number().int().nullable(),
+  /** The plan's group chat, for the host and accepted members once it exists. */
+  chatId: z.string().uuid().nullable(),
   createdAt: z.string(),
 });
 
@@ -385,6 +406,7 @@ export type SkillLevel = z.infer<typeof skillLevelSchema>;
 export type CostSplit = z.infer<typeof costSplitSchema>;
 export type PlanStatus = z.infer<typeof planStatusSchema>;
 export type FeedSort = z.infer<typeof feedSortSchema>;
+export type RequestStatus = z.infer<typeof requestStatusSchema>;
 export type CreatePlanRequest = z.input<typeof createPlanRequestSchema>;
 export type CreatePlan = z.output<typeof createPlanRequestSchema>;
 export type UpdatePlanRequest = z.input<typeof updatePlanRequestSchema>;
